@@ -136,6 +136,59 @@ func TestTrackerSchemaSucceedsWhenSearchMetadataIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestTrackerSchemaSkipsMalformedFilterChoices(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/bugs":
+			_, _ = w.Write([]byte(`{"tracker_config":{"options":{"mount_label":"Bugs"}}}`))
+		case "/rest/p/test/bugs/search":
+			_, _ = w.Write([]byte(`{"filter_choices":{"status":[[],["open","2"],{"bad":true}],"assigned_to":null}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tracker", "schema", "--project", "test", "--tracker", "bugs"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	result := got["result"].(map[string]any)
+	fields := result["fields"].([]any)
+	if len(fields) != 2 {
+		t.Fatalf("len(result.fields) = %d, want 2", len(fields))
+	}
+	statusField := fields[1].(map[string]any)
+	values := statusField["values"].([]any)
+	if len(values) != 2 {
+		t.Fatalf("len(status.values) = %d, want 2", len(values))
+	}
+	openValue := values[0].(map[string]any)
+	if openValue["value"] != "open" {
+		t.Fatalf("status.values[0].value = %v, want %q", openValue["value"], "open")
+	}
+	if openValue["count"] != float64(2) {
+		t.Fatalf("status.values[0].count = %v, want 2", openValue["count"])
+	}
+	malformedValue := values[1].(map[string]any)
+	if malformedValue["value"] == nil {
+		t.Fatal("status.values[1].value = nil, want retained malformed object")
+	}
+	if _, ok := malformedValue["count"]; ok {
+		t.Fatalf("status.values[1].count present, want omitted")
+	}
+}
+
 func TestTrackerSchemaRequiresProjectAndTracker(t *testing.T) {
 	t.Parallel()
 

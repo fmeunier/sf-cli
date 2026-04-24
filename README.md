@@ -124,7 +124,7 @@ sf tracker schema --project fuse-emulator --tracker bugs
 
 Normal command execution returns JSON envelopes.
 
-Successful calls return fields like:
+Every envelope includes these top-level fields:
 - `version`
 - `mode`
 - `command`
@@ -134,7 +134,71 @@ Successful calls return fields like:
 - `result`
 - `error`
 
-Failures return the same envelope shape with `ok: false`, `result: null`, and an `error` object containing stable `code` and `message` fields.
+The envelope field semantics are:
+- `result`: the primary machine-readable outcome for the command. On success, this is the command-specific payload. On failure, it is always `null`.
+- `proposal`: optional machine-readable intent metadata for the command, including the normalized action plus resolved target and inputs. When no proposal metadata is available, the field is omitted entirely.
+- `warnings`: non-fatal caveats about an otherwise successful response. Warnings never replace `result` and do not change `ok`; callers should treat them as supplemental metadata.
+
+Coexistence and precedence rules:
+- `result` and `proposal` may appear together on successful responses. `proposal` explains intent; `result` remains the source of truth for the command outcome.
+- `warnings` may appear alongside `result`, alongside `proposal`, or alongside both.
+- `proposal` may also appear on failures when the CLI can still report the resolved command intent. In that case `ok` is `false`, `result` is `null`, and `error` is authoritative.
+- Consumers should interpret fields in this order: first `ok`, then `error` when `ok` is `false`, otherwise `result`, with `proposal` and `warnings` treated as contextual metadata.
+
+Examples:
+
+Successful result with proposal:
+
+```json
+{
+  "ok": true,
+  "warnings": [],
+  "proposal": {
+    "action": "list_tickets",
+    "target": {"project": "fuse-emulator", "tracker": "bugs"},
+    "inputs": {"limit": 10},
+    "effects": []
+  },
+  "result": {
+    "tickets": [],
+    "count": 0
+  },
+  "error": null
+}
+```
+
+Successful response with warnings:
+
+```json
+{
+  "ok": true,
+  "warnings": ["comment body exceeds the recommended length"],
+  "result": {
+    "ok": true,
+    "validated_actions": []
+  },
+  "error": null
+}
+```
+
+Failure with proposal context:
+
+```json
+{
+  "ok": false,
+  "warnings": [],
+  "proposal": {
+    "action": "get_ticket",
+    "target": {"project": "fuse-emulator", "tracker": "bugs", "ticket": 42},
+    "effects": []
+  },
+  "result": null,
+  "error": {
+    "code": "not_found",
+    "message": "ticket not found"
+  }
+}
+```
 
 Warnings are reported at the top-level `warnings` field so callers do not need to inspect command-specific payloads for partial-success metadata.
 

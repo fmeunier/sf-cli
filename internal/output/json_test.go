@@ -11,10 +11,10 @@ func TestWriteJSONFormatsIndentedEnvelope(t *testing.T) {
 	t.Parallel()
 
 	envelope := model.Envelope{
-		Version: "v1",
-		Mode:    "read_only",
-		Command: "tickets.list",
-		OK:      true,
+		Version:  "v1",
+		Mode:     "read_only",
+		Command:  "tickets.list",
+		OK:       true,
 		Warnings: []string{},
 		Proposal: &model.Proposal{
 			Action:  "list_tickets",

@@ -59,7 +59,7 @@ func execute(args []string) model.Envelope {
 	case "project":
 		return handleProject(context.Background(), client, remaining[1:])
 	case "tracker":
-		return handleTracker(remaining[1:])
+		return handleTracker(context.Background(), client, remaining[1:])
 	default:
 		return errorEnvelope(remaining[0], nil, "invalid_command", fmt.Sprintf("unknown command %q", remaining[0]))
 	}
@@ -114,13 +114,18 @@ func handleTickets(ctx context.Context, client *api.Client, args []string) model
 	}
 }
 
-func handleTracker(args []string) model.Envelope {
+func handleTracker(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	if len(args) == 0 {
 		return errorEnvelope("tracker", proposal("tracker", "dispatch_tracker_command", nil, nil), "invalid_arguments", "missing tracker subcommand")
 	}
 
-	command := "tracker." + args[0]
-	return errorEnvelope(command, proposal(command, actionForTracker(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet", command))
+	switch args[0] {
+	case "schema":
+		return runTrackerSchema(ctx, client, args[1:])
+	default:
+		command := "tracker." + args[0]
+		return errorEnvelope(command, proposal(command, actionForTracker(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet", command))
+	}
 }
 
 func proposal(command string, action string, target map[string]any, inputs map[string]any) *model.Proposal {

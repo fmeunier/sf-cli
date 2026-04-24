@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"sf-cli/internal/api"
@@ -105,6 +106,92 @@ func runTicketsComments(ctx context.Context, client *api.Client, args []string) 
 	}
 
 	return successEnvelope(command, prop, result)
+}
+
+type ticketActivity struct {
+	TicketNum         int    `json:"ticket_num"`
+	Summary           string `json:"summary"`
+	Status            string `json:"status"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
+	LastCommentAt     string `json:"last_comment_at,omitempty"`
+	LastCommentAuthor string `json:"last_comment_author,omitempty"`
+}
+
+type ticketsActivityResponse struct {
+	Tickets    []ticketActivity `json:"tickets"`
+	Count      int              `json:"count"`
+	Page       int              `json:"page"`
+	Limit      int              `json:"limit"`
+	Pagination api.Pagination   `json:"pagination"`
+}
+
+func runTicketsActivity(ctx context.Context, client *api.Client, args []string) model.Envelope {
+	config, err := parseTicketsListFlags(args)
+	command := "tickets.activity"
+	prop := proposal(command, "list_ticket_activity", map[string]any{"project": config.Project, "tracker": config.Tracker}, map[string]any{"page": config.Page, "limit": config.Limit})
+	if err != nil {
+		return errorEnvelope(command, prop, "invalid_arguments", err.Error())
+	}
+
+	listResult, err := client.ListTickets(ctx, api.ListTicketsParams{
+		Project: config.Project,
+		Tracker: config.Tracker,
+		Page:    config.Page,
+		Limit:   config.Limit,
+	})
+	if err != nil {
+		return apiErrorEnvelope(command, prop, err)
+	}
+
+	activities := make([]ticketActivity, 0, len(listResult.Tickets))
+	for _, ticket := range listResult.Tickets {
+		activity := ticketActivity{
+			TicketNum: ticket.TicketNum,
+			Summary:   ticket.Summary,
+			Status:    ticket.Status,
+			UpdatedAt: ticket.ModDate,
+		}
+
+		commentsResult, err := client.GetTicketComments(ctx, api.GetTicketParams{Project: config.Project, Tracker: config.Tracker, TicketID: ticket.TicketNum})
+		if err != nil {
+			return apiErrorEnvelope(command, prop, err)
+		}
+		if lastComment, ok := lastComment(commentsResult.Comments); ok {
+			activity.LastCommentAt = lastComment.CreatedAt
+			activity.LastCommentAuthor = lastComment.Author
+			if activity.UpdatedAt == "" || lastComment.CreatedAt > activity.UpdatedAt {
+				activity.UpdatedAt = lastComment.CreatedAt
+			}
+		}
+
+		activities = append(activities, activity)
+	}
+
+	sort.SliceStable(activities, func(i int, j int) bool {
+		left := activities[i]
+		right := activities[j]
+		if left.UpdatedAt != right.UpdatedAt {
+			return left.UpdatedAt > right.UpdatedAt
+		}
+		return left.TicketNum > right.TicketNum
+	})
+
+	return successEnvelope(command, prop, ticketsActivityResponse{
+		Tickets:    activities,
+		Count:      listResult.Count,
+		Page:       listResult.Page,
+		Limit:      listResult.Limit,
+		Pagination: listResult.Pagination,
+	})
+}
+
+func lastComment(comments []api.Comment) (api.Comment, bool) {
+	for i := len(comments) - 1; i >= 0; i-- {
+		if comments[i].CreatedAt != "" || comments[i].Author != "" || comments[i].Body != "" {
+			return comments[i], true
+		}
+	}
+	return api.Comment{}, false
 }
 
 func parseTicketsListFlags(args []string) (ticketsListConfig, error) {

@@ -25,7 +25,7 @@ func helpText(args []string) (string, bool) {
 	case 2:
 		switch path[0] + "." + path[1] {
 		case "tickets.list":
-			return ticketsListUsage(), true
+			return ticketsListUsage("tickets list"), true
 		case "tickets.search":
 			return ticketsSearchUsage(), true
 		case "tickets.get":
@@ -110,11 +110,11 @@ func actionsValidateUsage() string {
 }
 
 func ticketsUsage() string {
-	return "Usage:\n  sf tickets <subcommand> [args]\n\nSubcommands:\n  list        List tickets in a tracker\n  search      Search tracker tickets with a query\n  get         Fetch a single ticket\n  comments    Fetch comments for a ticket\n\nExamples:\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'\n  sf tickets get --project fuse-emulator --tracker bugs --ticket 42\n  sf tickets comments --project fuse-emulator --tracker bugs --ticket 42\n"
+	return "Usage:\n  sf tickets <subcommand> [args]\n\nSubcommands:\n  list        List tickets in a tracker\n  search      Search tracker tickets with a query\n  activity    Show most recently active tickets in a tracker\n  get         Fetch a single ticket\n  comments    Fetch comments for a ticket\n\nExamples:\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'\n  sf tickets activity --project fuse-emulator --tracker bugs\n  sf tickets get --project fuse-emulator --tracker bugs --ticket 42\n  sf tickets comments --project fuse-emulator --tracker bugs --ticket 42\n"
 }
 
-func ticketsListUsage() string {
-	return "Usage:\n  sf tickets list --project PROJECT --tracker TRACKER [--page N] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --page N           Result page to fetch (default 0)\n  --limit N          Page size (default 25)\n"
+func ticketsListUsage(command string) string {
+	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER [--page N] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --page N           Result page to fetch (default 0)\n  --limit N          Page size (default 25)\n"
 }
 
 func ticketsSearchUsage() string {

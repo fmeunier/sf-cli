@@ -128,6 +128,65 @@ func TestTicketsSearchExecutesAPIRequest(t *testing.T) {
 	}
 }
 
+func TestTicketsActivityReturnsMostRecentUpdates(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/tickets":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"Older","status":"open","mod_date":"2026-04-24T01:00:00Z","discussion_thread":{"_id":"thread-1"}},{"ticket_num":2,"summary":"Newer comment","status":"open","mod_date":"2026-04-24T00:30:00Z","discussion_thread":{"_id":"thread-2"}}],"count":2,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/1":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":1,"summary":"Older","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-1"},"mod_date":"2026-04-24T01:00:00Z"}}`))
+		case "/rest/p/test/tickets/2":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":2,"summary":"Newer comment","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-2"},"mod_date":"2026-04-24T00:30:00Z"}}`))
+		case "/rest/p/test/tickets/_discuss/thread/thread-1":
+			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-1","posts":[{"author":"alice","text":"older comment","is_meta":false,"timestamp":"2026-04-24T00:45:00Z","slug":"a1"}]}}`))
+		case "/rest/p/test/tickets/_discuss/thread/thread-2":
+			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-2","posts":[{"author":"bob","text":"latest comment","is_meta":false,"timestamp":"2026-04-24T02:00:00Z","slug":"b1"}]}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Command != "tickets.activity" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.activity")
+	}
+	if got.Proposal == nil || got.Proposal.Action != "list_ticket_activity" {
+		t.Fatalf("proposal = %#v, want action %q", got.Proposal, "list_ticket_activity")
+	}
+	result := got.Result.(map[string]any)
+	activities := result["tickets"].([]any)
+	if len(activities) != 2 {
+		t.Fatalf("len(tickets) = %d, want 2", len(activities))
+	}
+	first := activities[0].(map[string]any)
+	if first["ticket_num"] != float64(2) {
+		t.Fatalf("first.ticket_num = %v, want 2", first["ticket_num"])
+	}
+	if first["last_comment_at"] != "2026-04-24T02:00:00Z" {
+		t.Fatalf("first.last_comment_at = %v, want latest timestamp", first["last_comment_at"])
+	}
+	if first["last_comment_author"] != "bob" {
+		t.Fatalf("first.last_comment_author = %v, want %q", first["last_comment_author"], "bob")
+	}
+	if first["updated_at"] != "2026-04-24T02:00:00Z" {
+		t.Fatalf("first.updated_at = %v, want latest activity timestamp", first["updated_at"])
+	}
+	pagination := result["pagination"].(map[string]any)
+	if pagination["count"] != float64(2) {
+		t.Fatalf("pagination.count = %v, want 2", pagination["count"])
+	}
+}
+
 func TestTicketsListRequiresProjectAndTracker(t *testing.T) {
 	t.Parallel()
 

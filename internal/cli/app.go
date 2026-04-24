@@ -111,6 +111,8 @@ func handleTickets(ctx context.Context, client *api.Client, args []string) model
 		return runTicketsList(ctx, client, args[1:])
 	case "search":
 		return runTicketsSearch(ctx, client, args[1:])
+	case "activity":
+		return runTicketsActivity(ctx, client, args[1:])
 	case "get":
 		return runTicketsGet(ctx, client, args[1:])
 	case "comments":
@@ -193,6 +195,8 @@ func actionForTickets(subcommand string) string {
 		return "list_tickets"
 	case "search":
 		return "search_tickets"
+	case "activity":
+		return "list_ticket_activity"
 	case "get":
 		return "get_ticket"
 	case "comments":

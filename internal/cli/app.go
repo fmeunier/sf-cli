@@ -61,6 +61,8 @@ func execute(args []string) model.Envelope {
 	switch remaining[0] {
 	case "tickets":
 		return handleTickets(context.Background(), client, remaining[1:])
+	case "actions":
+		return handleActions(context.Background(), client, remaining[1:])
 	case "project":
 		return handleProject(context.Background(), client, remaining[1:])
 	case "tracker":
@@ -212,4 +214,11 @@ func actionForProject(subcommand string) string {
 		return "list_project_tools"
 	}
 	return "dispatch_project_command"
+}
+
+func actionForActions(subcommand string) string {
+	if subcommand == "validate" {
+		return "validate_actions_file"
+	}
+	return "dispatch_actions_command"
 }

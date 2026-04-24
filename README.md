@@ -7,6 +7,7 @@ The current MVP focuses on read-only JSON workflows for:
 - searching tracker tickets
 - fetching a single ticket
 - fetching ticket comments
+- validating write-intent action files without side effects
 - inspecting project tools
 - inspecting best-effort tracker schema metadata
 
@@ -88,6 +89,12 @@ Get ticket comments:
 sf tickets comments --project fuse-emulator --tracker bugs --ticket 42
 ```
 
+Validate a dry-run actions file:
+
+```bash
+sf actions validate actions.json
+```
+
 List project tools:
 
 ```bash
@@ -125,6 +132,8 @@ For ticket reads, overlapping ticket fields use the same names and shapes across
 Paginated collection commands expose `result.pagination` with `page`, `limit`, `count`, `has_previous`, `has_next`, `previous_page`, and `next_page`. Unpaginated collection commands omit `result.pagination` entirely.
 
 `tracker schema` keeps best-effort field values and now also exposes `fields[].validation` with structured validation metadata where the upstream tracker data permits it. Today that includes inferred field `type`, normalized `allowed_values`, and best-effort `default` values such as the default milestone when SourceForge exposes one.
+
+`actions validate` reads a JSON file with an `actions` array and returns machine-readable validation results in `result.ok` and `result.validated_actions`. The first supported dry-run intent is `ticket_comment`, which checks tracker existence, ticket existence, and comment body length without applying any changes.
 
 ## Scope And Limits
 

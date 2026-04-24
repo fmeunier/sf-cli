@@ -15,6 +15,8 @@ func helpText(args []string) (string, bool) {
 		switch path[0] {
 		case "tickets":
 			return ticketsUsage(), true
+		case "actions":
+			return actionsUsage(), true
 		case "project":
 			return projectUsage(), true
 		case "tracker":
@@ -30,6 +32,8 @@ func helpText(args []string) (string, bool) {
 			return ticketsGetUsage("tickets get"), true
 		case "tickets.comments":
 			return ticketsGetUsage("tickets comments"), true
+		case "actions.validate":
+			return actionsValidateUsage(), true
 		case "project.tools":
 			return projectToolsUsage(), true
 		case "tracker.schema":
@@ -94,7 +98,15 @@ func consumesNextValue(arg string) bool {
 }
 
 func rootUsage() string {
-	return "Usage:\n  sf [--base-url URL] [--token TOKEN] <command> [args]\n\nCommands:\n  tickets      List, search, inspect, and comment-read tracker tickets\n  project      Inspect project metadata\n  tracker      Inspect tracker schema metadata\n  help         Show help for a command\n\nGlobal options:\n  --base-url URL   Base URL for the SourceForge REST API\n  --token TOKEN    Bearer token for authenticated requests\n\nEnvironment:\n  SF_BEARER_TOKEN  Bearer token used when --token is not provided\n\nExamples:\n  sf help tickets\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tracker schema --project fuse-emulator --tracker bugs\n"
+	return "Usage:\n  sf [--base-url URL] [--token TOKEN] <command> [args]\n\nCommands:\n  tickets      List, search, inspect, and comment-read tracker tickets\n  actions      Dry-run validation for write intents\n  project      Inspect project metadata\n  tracker      Inspect tracker schema metadata\n  help         Show help for a command\n\nGlobal options:\n  --base-url URL   Base URL for the SourceForge REST API\n  --token TOKEN    Bearer token for authenticated requests\n\nEnvironment:\n  SF_BEARER_TOKEN  Bearer token used when --token is not provided\n\nExamples:\n  sf help tickets\n  sf actions validate actions.json\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tracker schema --project fuse-emulator --tracker bugs\n"
+}
+
+func actionsUsage() string {
+	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nExample:\n  sf actions validate actions.json\n"
+}
+
+func actionsValidateUsage() string {
+	return "Usage:\n  sf actions validate ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n"
 }
 
 func ticketsUsage() string {

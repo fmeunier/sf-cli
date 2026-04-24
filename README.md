@@ -122,6 +122,8 @@ For ticket reads, overlapping ticket fields use the same names and shapes across
 
 `tickets comments` returns normalized comment data in `result.comments`, ordered by `created_at` ascending and then `id` ascending when timestamps are equal or missing. Each comment uses the same shape: `id`, `author`, `body`, `created_at`, `edited_at`, `subject`, `is_meta`, and `attachments`. Minimal thread metadata remains in `result.thread`.
 
+Paginated collection commands expose `result.pagination` with `page`, `limit`, `count`, `has_previous`, `has_next`, `previous_page`, and `next_page`. Unpaginated collection commands omit `result.pagination` entirely.
+
 ## Scope And Limits
 
 Current scope:

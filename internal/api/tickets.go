@@ -23,6 +23,7 @@ type TicketListResponse struct {
 	Count      int         `json:"count"`
 	Page       int         `json:"page"`
 	Limit      int         `json:"limit"`
+	Pagination Pagination  `json:"pagination"`
 	Milestones []Milestone `json:"milestones,omitempty"`
 }
 
@@ -31,8 +32,19 @@ type TicketSearchResponse struct {
 	Count         int            `json:"count"`
 	Page          int            `json:"page"`
 	Limit         int            `json:"limit"`
+	Pagination    Pagination     `json:"pagination"`
 	Sort          string         `json:"sort,omitempty"`
 	FilterChoices map[string]any `json:"filter_choices,omitempty"`
+}
+
+type Pagination struct {
+	Page         int  `json:"page"`
+	Limit        int  `json:"limit"`
+	Count        int  `json:"count"`
+	HasPrevious  bool `json:"has_previous"`
+	HasNext      bool `json:"has_next"`
+	PreviousPage *int `json:"previous_page"`
+	NextPage     *int `json:"next_page"`
 }
 
 type ListTicketsParams struct {
@@ -137,6 +149,7 @@ func (c *Client) ListTickets(ctx context.Context, params ListTicketsParams) (Tic
 	if err := c.GetJSON(ctx, trackerPath(params.Project, params.Tracker), paginationQuery(params.Page, params.Limit), &out); err != nil {
 		return TicketListResponse{}, err
 	}
+	out.Pagination = normalizePagination(out.Page, out.Limit, out.Count, len(out.Tickets))
 	return out, nil
 }
 
@@ -148,6 +161,7 @@ func (c *Client) SearchTickets(ctx context.Context, params SearchTicketsParams) 
 	if err := c.GetJSON(ctx, trackerPath(params.Project, params.Tracker)+"/search", query, &out); err != nil {
 		return TicketSearchResponse{}, err
 	}
+	out.Pagination = normalizePagination(out.Page, out.Limit, out.Count, len(out.Tickets))
 	return out, nil
 }
 
@@ -217,6 +231,28 @@ func normalizeComments(thread rawDiscussionThread) TicketCommentsResponse {
 		},
 		Comments: comments,
 	}
+}
+
+func normalizePagination(page int, limit int, count int, returned int) Pagination {
+	pagination := Pagination{
+		Page:  page,
+		Limit: limit,
+		Count: count,
+	}
+
+	if page > 0 {
+		pagination.HasPrevious = true
+		previousPage := page - 1
+		pagination.PreviousPage = &previousPage
+	}
+
+	if limit > 0 && page*limit+returned < count {
+		pagination.HasNext = true
+		nextPage := page + 1
+		pagination.NextPage = &nextPage
+	}
+
+	return pagination
 }
 
 func paginationQuery(page int, limit int) url.Values {

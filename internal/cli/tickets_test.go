@@ -50,6 +50,16 @@ func TestTicketsListExecutesAPIRequest(t *testing.T) {
 	if got.Proposal == nil || got.Proposal.Action != "list_tickets" {
 		t.Fatalf("proposal = %#v, want action %q", got.Proposal, "list_tickets")
 	}
+	pagination := result["pagination"].(map[string]any)
+	if pagination["page"] != float64(0) {
+		t.Fatalf("pagination.page = %v, want 0", pagination["page"])
+	}
+	if pagination["has_previous"] != false {
+		t.Fatalf("pagination.has_previous = %v, want false", pagination["has_previous"])
+	}
+	if pagination["has_next"] != false {
+		t.Fatalf("pagination.has_next = %v, want false", pagination["has_next"])
+	}
 	tickets := result["tickets"].([]any)
 	firstTicket := tickets[0].(map[string]any)
 	if firstTicket["status"] != "open" {
@@ -100,6 +110,13 @@ func TestTicketsSearchExecutesAPIRequest(t *testing.T) {
 	result := got.Result.(map[string]any)
 	if result["sort"] != "ticket_num_i desc" {
 		t.Fatalf("result.sort = %v, want %q", result["sort"], "ticket_num_i desc")
+	}
+	pagination := result["pagination"].(map[string]any)
+	if pagination["page"] != float64(0) {
+		t.Fatalf("pagination.page = %v, want 0", pagination["page"])
+	}
+	if pagination["has_next"] != false {
+		t.Fatalf("pagination.has_next = %v, want false", pagination["has_next"])
 	}
 	tickets := result["tickets"].([]any)
 	firstTicket := tickets[0].(map[string]any)
@@ -369,6 +386,99 @@ func TestTicketsCommentsReturnsEmptyListWithoutThread(t *testing.T) {
 	thread := result["thread"].(map[string]any)
 	if len(thread) != 0 {
 		t.Fatalf("thread = %v, want empty object", thread)
+	}
+	if _, ok := result["pagination"]; ok {
+		t.Fatalf("pagination = %v, want omitted for unpaginated comments", result["pagination"])
+	}
+}
+
+func TestTicketsListPaginationFirstPageExposesNextOnly(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"First","status":"open"},{"ticket_num":2,"summary":"Second","status":"open"}],"count":5,"page":0,"limit":2}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets", "--limit", "2"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	pagination := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["pagination"].(map[string]any)
+	if pagination["has_previous"] != false {
+		t.Fatalf("has_previous = %v, want false", pagination["has_previous"])
+	}
+	if pagination["has_next"] != true {
+		t.Fatalf("has_next = %v, want true", pagination["has_next"])
+	}
+	if pagination["next_page"] != float64(1) {
+		t.Fatalf("next_page = %v, want 1", pagination["next_page"])
+	}
+	if pagination["previous_page"] != nil {
+		t.Fatalf("previous_page = %v, want nil", pagination["previous_page"])
+	}
+}
+
+func TestTicketsSearchPaginationMiddlePageExposesBothDirections(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":3,"summary":"Third","status":"open"},{"ticket_num":4,"summary":"Fourth","status":"open"}],"count":6,"page":1,"limit":2}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open", "--page", "1", "--limit", "2"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	pagination := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["pagination"].(map[string]any)
+	if pagination["has_previous"] != true {
+		t.Fatalf("has_previous = %v, want true", pagination["has_previous"])
+	}
+	if pagination["previous_page"] != float64(0) {
+		t.Fatalf("previous_page = %v, want 0", pagination["previous_page"])
+	}
+	if pagination["has_next"] != true {
+		t.Fatalf("has_next = %v, want true", pagination["has_next"])
+	}
+	if pagination["next_page"] != float64(2) {
+		t.Fatalf("next_page = %v, want 2", pagination["next_page"])
+	}
+}
+
+func TestTicketsListPaginationFinalPageExposesNoNextPage(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":5,"summary":"Fifth","status":"open"}],"count":5,"page":2,"limit":2}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets", "--page", "2", "--limit", "2"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	pagination := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["pagination"].(map[string]any)
+	if pagination["has_previous"] != true {
+		t.Fatalf("has_previous = %v, want true", pagination["has_previous"])
+	}
+	if pagination["previous_page"] != float64(1) {
+		t.Fatalf("previous_page = %v, want 1", pagination["previous_page"])
+	}
+	if pagination["has_next"] != false {
+		t.Fatalf("has_next = %v, want false", pagination["has_next"])
+	}
+	if pagination["next_page"] != nil {
+		t.Fatalf("next_page = %v, want nil", pagination["next_page"])
 	}
 }
 

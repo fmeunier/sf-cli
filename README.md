@@ -124,6 +124,8 @@ For ticket reads, overlapping ticket fields use the same names and shapes across
 
 Paginated collection commands expose `result.pagination` with `page`, `limit`, `count`, `has_previous`, `has_next`, `previous_page`, and `next_page`. Unpaginated collection commands omit `result.pagination` entirely.
 
+`tracker schema` keeps best-effort field values and now also exposes `fields[].validation` with structured validation metadata where the upstream tracker data permits it. Today that includes inferred field `type`, normalized `allowed_values`, and best-effort `default` values such as the default milestone when SourceForge exposes one.
+
 ## Scope And Limits
 
 Current scope:

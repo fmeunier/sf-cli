@@ -72,10 +72,18 @@ func TestTrackerSchemaReturnsBestEffortMetadata(t *testing.T) {
 	if statusField["name"] != "status" {
 		t.Fatalf("status field name = %v, want %q", statusField["name"], "status")
 	}
+	statusValidation := statusField["validation"].(map[string]any)
+	if statusValidation["type"] != "choice" {
+		t.Fatalf("status validation.type = %v, want %q", statusValidation["type"], "choice")
+	}
 	statusValues := statusField["values"].([]any)
 	firstStatus := statusValues[0].(map[string]any)
 	if firstStatus["value"] != "open" {
 		t.Fatalf("status value[0] = %v, want %q", firstStatus["value"], "open")
+	}
+	allowedValues := statusValidation["allowed_values"].([]any)
+	if allowedValues[0].(map[string]any)["value"] != "open" {
+		t.Fatalf("status validation.allowed_values[0] = %v, want %q", allowedValues[0].(map[string]any)["value"], "open")
 	}
 	if _, ok := result["warnings"]; ok {
 		t.Fatalf("result.warnings present, want omitted")
@@ -90,6 +98,11 @@ func TestTrackerSchemaReturnsBestEffortMetadata(t *testing.T) {
 	assignedValues := assignedField["values"].([]any)
 	if assignedValues[0].(map[string]any)["value"] != "alice" {
 		t.Fatalf("assigned_to value[0] = %v, want %q", assignedValues[0].(map[string]any)["value"], "alice")
+	}
+	milestoneField := fieldByName["_milestone"]
+	milestoneValidation := milestoneField["validation"].(map[string]any)
+	if milestoneValidation["default"] != "v1" {
+		t.Fatalf("milestone validation.default = %v, want %q", milestoneValidation["default"], "v1")
 	}
 }
 
@@ -180,6 +193,13 @@ func TestTrackerSchemaSkipsMalformedFilterChoices(t *testing.T) {
 	}
 	if _, ok := malformedValue["count"]; ok {
 		t.Fatalf("status.values[1].count present, want omitted")
+	}
+	validation := statusField["validation"].(map[string]any)
+	if validation["type"] != "unknown" {
+		t.Fatalf("status validation.type = %v, want %q", validation["type"], "unknown")
+	}
+	if _, ok := validation["allowed_values"]; ok {
+		t.Fatalf("status validation.allowed_values present, want omitted")
 	}
 }
 

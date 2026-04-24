@@ -27,13 +27,21 @@ type SavedBin struct {
 }
 
 type TrackerField struct {
-	Name   string              `json:"name"`
-	Values []TrackerFieldValue `json:"values,omitempty"`
+	Name       string                  `json:"name"`
+	Values     []TrackerFieldValue     `json:"values,omitempty"`
+	Validation *TrackerFieldValidation `json:"validation,omitempty"`
 }
 
 type TrackerFieldValue struct {
 	Value any  `json:"value"`
 	Count *int `json:"count,omitempty"`
+}
+
+type TrackerFieldValidation struct {
+	Type          string              `json:"type"`
+	Required      *bool               `json:"required,omitempty"`
+	Default       any                 `json:"default,omitempty"`
+	AllowedValues []TrackerFieldValue `json:"allowed_values,omitempty"`
 }
 
 func (c *Client) GetTrackerSchema(ctx context.Context, project string, tracker string) (TrackerSchemaResponse, error) {
@@ -60,7 +68,7 @@ func (c *Client) GetTrackerSchema(ctx context.Context, project string, tracker s
 	if searchErr != nil {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("tracker filter metadata unavailable: %s", searchErr.Error()))
 	} else {
-		result.Fields = trackerFields(searchPayload)
+		result.Fields = trackerFields(searchPayload, result.Milestones)
 	}
 
 	if listErr != nil && searchErr != nil {
@@ -137,7 +145,7 @@ func trackerSavedBins(payload map[string]any) []SavedBin {
 	return savedBins
 }
 
-func trackerFields(payload map[string]any) []TrackerField {
+func trackerFields(payload map[string]any, milestones []Milestone) []TrackerField {
 	rawFilterChoices, ok := payload["filter_choices"].(map[string]any)
 	if !ok || len(rawFilterChoices) == 0 {
 		return nil
@@ -152,13 +160,79 @@ func trackerFields(payload map[string]any) []TrackerField {
 	fields := make([]TrackerField, 0, len(names))
 	for _, name := range names {
 		values := trackerFieldValues(rawFilterChoices[name])
-		fields = append(fields, TrackerField{Name: name, Values: values})
+		fields = append(fields, TrackerField{
+			Name:       name,
+			Values:     values,
+			Validation: trackerFieldValidation(name, values, milestones),
+		})
 	}
 
 	if len(fields) == 0 {
 		return nil
 	}
 	return fields
+}
+
+func trackerFieldValidation(name string, values []TrackerFieldValue, milestones []Milestone) *TrackerFieldValidation {
+	validationType := "unknown"
+	if allTrackerFieldValuesComparable(values) {
+		validationType = "choice"
+	}
+
+	validation := &TrackerFieldValidation{Type: validationType}
+	if len(values) > 0 && validationType == "choice" {
+		validation.AllowedValues = append([]TrackerFieldValue(nil), values...)
+	}
+
+	if name == "_milestone" {
+		if defaultValue, ok := defaultMilestoneValue(milestones); ok {
+			validation.Default = defaultValue
+		}
+	}
+
+	if len(validation.AllowedValues) == 0 && validation.Default == nil && validation.Required == nil && validation.Type == "unknown" {
+		return validation
+	}
+
+	return validation
+}
+
+func allTrackerFieldValuesComparable(values []TrackerFieldValue) bool {
+	if len(values) == 0 {
+		return false
+	}
+
+	for _, value := range values {
+		switch value.Value.(type) {
+		case string, bool, int, int32, int64, float64:
+			continue
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+func defaultMilestoneValue(milestones []Milestone) (any, bool) {
+	for _, milestone := range milestones {
+		if truthyValue(milestone.Default) {
+			return milestone.Name, true
+		}
+	}
+	return nil, false
+}
+
+func truthyValue(raw any) bool {
+	switch value := raw.(type) {
+	case bool:
+		return value
+	case string:
+		trimmed := strings.TrimSpace(strings.ToLower(value))
+		return trimmed == "1" || trimmed == "true" || trimmed == "yes" || trimmed == "on"
+	default:
+		return false
+	}
 }
 
 func trackerFieldValues(raw any) []TrackerFieldValue {

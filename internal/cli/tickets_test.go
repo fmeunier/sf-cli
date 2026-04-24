@@ -290,13 +290,85 @@ func TestTicketsCommentsFetchesTicketThenThread(t *testing.T) {
 	}
 	result := got.Result.(map[string]any)
 	thread := result["thread"].(map[string]any)
-	posts := thread["posts"].([]any)
-	if len(posts) != 1 {
-		t.Fatalf("len(posts) = %d, want 1", len(posts))
+	if thread["id"] != "thread-42" {
+		t.Fatalf("thread.id = %v, want %q", thread["id"], "thread-42")
 	}
-	post := posts[0].(map[string]any)
-	if post["text"] != "first comment" {
-		t.Fatalf("post.text = %v, want %q", post["text"], "first comment")
+	comments := result["comments"].([]any)
+	if len(comments) != 1 {
+		t.Fatalf("len(comments) = %d, want 1", len(comments))
+	}
+	comment := comments[0].(map[string]any)
+	if comment["body"] != "first comment" {
+		t.Fatalf("comment.body = %v, want %q", comment["body"], "first comment")
+	}
+	if comment["id"] != "a1" {
+		t.Fatalf("comment.id = %v, want %q", comment["id"], "a1")
+	}
+	if comment["created_at"] != "2026-04-24T00:00:00Z" {
+		t.Fatalf("comment.created_at = %v, want timestamp", comment["created_at"])
+	}
+}
+
+func TestTicketsCommentsNormalizesOrderingDeterministically(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/tickets/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","discussion_thread":{"_id":"thread-42"}}}`))
+		case "/rest/p/test/tickets/_discuss/thread/thread-42":
+			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-42","subject":"Discussion","posts":[{"author":"zoe","text":"no timestamp","is_meta":false,"slug":"z2"},{"author":"alice","text":"first","is_meta":false,"timestamp":"2026-04-24T00:00:00Z","slug":"a1"},{"author":"bob","text":"second same time","is_meta":false,"timestamp":"2026-04-24T00:00:00Z","slug":"b2"}]}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "comments", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	comments := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["comments"].([]any)
+	if comments[0].(map[string]any)["id"] != "a1" {
+		t.Fatalf("comments[0].id = %v, want %q", comments[0].(map[string]any)["id"], "a1")
+	}
+	if comments[1].(map[string]any)["id"] != "b2" {
+		t.Fatalf("comments[1].id = %v, want %q", comments[1].(map[string]any)["id"], "b2")
+	}
+	if comments[2].(map[string]any)["id"] != "z2" {
+		t.Fatalf("comments[2].id = %v, want %q", comments[2].(map[string]any)["id"], "z2")
+	}
+}
+
+func TestTicketsCommentsReturnsEmptyListWithoutThread(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/rest/p/test/tickets/42" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","discussion_thread":{"_id":""}}}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "comments", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
+	comments := result["comments"].([]any)
+	if len(comments) != 0 {
+		t.Fatalf("len(comments) = %d, want 0", len(comments))
+	}
+	thread := result["thread"].(map[string]any)
+	if len(thread) != 0 {
+		t.Fatalf("thread = %v, want empty object", thread)
 	}
 }
 

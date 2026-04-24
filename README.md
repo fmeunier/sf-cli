@@ -120,6 +120,8 @@ Warnings are reported at the top-level `warnings` field so callers do not need t
 
 For ticket reads, overlapping ticket fields use the same names and shapes across `tickets list`, `tickets search`, and `tickets get`. Collection responses return those ticket objects in `result.tickets`, while detail responses return one ticket object in `result.ticket`.
 
+`tickets comments` returns normalized comment data in `result.comments`, ordered by `created_at` ascending and then `id` ascending when timestamps are equal or missing. Each comment uses the same shape: `id`, `author`, `body`, `created_at`, `edited_at`, `subject`, `is_meta`, and `attachments`. Minimal thread metadata remains in `result.thread`.
+
 ## Scope And Limits
 
 Current scope:

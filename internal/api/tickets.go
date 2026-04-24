@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 )
 
@@ -18,20 +19,20 @@ type Milestone struct {
 }
 
 type TicketListResponse struct {
-	Tickets    []Ticket        `json:"tickets"`
-	Count      int             `json:"count"`
-	Page       int             `json:"page"`
-	Limit      int             `json:"limit"`
-	Milestones []Milestone     `json:"milestones,omitempty"`
+	Tickets    []Ticket    `json:"tickets"`
+	Count      int         `json:"count"`
+	Page       int         `json:"page"`
+	Limit      int         `json:"limit"`
+	Milestones []Milestone `json:"milestones,omitempty"`
 }
 
 type TicketSearchResponse struct {
-	Tickets       []Ticket        `json:"tickets"`
-	Count         int             `json:"count"`
-	Page          int             `json:"page"`
-	Limit         int             `json:"limit"`
-	Sort          string          `json:"sort,omitempty"`
-	FilterChoices map[string]any  `json:"filter_choices,omitempty"`
+	Tickets       []Ticket       `json:"tickets"`
+	Count         int            `json:"count"`
+	Page          int            `json:"page"`
+	Limit         int            `json:"limit"`
+	Sort          string         `json:"sort,omitempty"`
+	FilterChoices map[string]any `json:"filter_choices,omitempty"`
 }
 
 type ListTicketsParams struct {
@@ -79,27 +80,48 @@ type Ticket struct {
 }
 
 type DiscussionThreadRef struct {
-	ID           string           `json:"_id"`
-	DiscussionID string           `json:"discussion_id,omitempty"`
-	Subject      string           `json:"subject,omitempty"`
-	Posts        []DiscussionPost `json:"posts,omitempty"`
+	ID           string              `json:"_id"`
+	DiscussionID string              `json:"discussion_id,omitempty"`
+	Subject      string              `json:"subject,omitempty"`
+	Posts        []RawDiscussionPost `json:"posts,omitempty"`
 }
 
-type DiscussionThreadResponse struct {
-	Thread DiscussionThread `json:"thread"`
+type TicketCommentsResponse struct {
+	Thread   CommentThread `json:"thread"`
+	Comments []Comment     `json:"comments"`
 }
 
-type DiscussionThread struct {
-	ID           string           `json:"_id"`
-	DiscussionID string           `json:"discussion_id,omitempty"`
-	Subject      string           `json:"subject,omitempty"`
-	Posts        []DiscussionPost `json:"posts,omitempty"`
-	Count        int              `json:"count,omitempty"`
-	Page         int              `json:"page,omitempty"`
-	Limit        int              `json:"limit,omitempty"`
+type CommentThread struct {
+	ID      string `json:"id,omitempty"`
+	Subject string `json:"subject,omitempty"`
 }
 
-type DiscussionPost struct {
+type Comment struct {
+	ID          string `json:"id,omitempty"`
+	Author      string `json:"author,omitempty"`
+	Body        string `json:"body"`
+	CreatedAt   string `json:"created_at,omitempty"`
+	EditedAt    any    `json:"edited_at,omitempty"`
+	Subject     string `json:"subject,omitempty"`
+	IsMeta      bool   `json:"is_meta"`
+	Attachments []any  `json:"attachments,omitempty"`
+}
+
+type rawDiscussionThreadResponse struct {
+	Thread rawDiscussionThread `json:"thread"`
+}
+
+type rawDiscussionThread struct {
+	ID           string              `json:"_id"`
+	DiscussionID string              `json:"discussion_id,omitempty"`
+	Subject      string              `json:"subject,omitempty"`
+	Posts        []RawDiscussionPost `json:"posts,omitempty"`
+	Count        int                 `json:"count,omitempty"`
+	Page         int                 `json:"page,omitempty"`
+	Limit        int                 `json:"limit,omitempty"`
+}
+
+type RawDiscussionPost struct {
 	Text        string `json:"text"`
 	IsMeta      bool   `json:"is_meta"`
 	Author      string `json:"author,omitempty"`
@@ -137,23 +159,64 @@ func (c *Client) GetTicket(ctx context.Context, params GetTicketParams) (TicketD
 	return out, nil
 }
 
-func (c *Client) GetTicketComments(ctx context.Context, params GetTicketParams) (DiscussionThreadResponse, error) {
+func (c *Client) GetTicketComments(ctx context.Context, params GetTicketParams) (TicketCommentsResponse, error) {
 	ticket, err := c.GetTicket(ctx, params)
 	if err != nil {
-		return DiscussionThreadResponse{}, err
+		return TicketCommentsResponse{}, err
 	}
 
 	threadID := ticket.Ticket.DiscussionThread.ID
 	if threadID == "" {
-		return DiscussionThreadResponse{Thread: DiscussionThread{Posts: []DiscussionPost{}}}, nil
+		return TicketCommentsResponse{Comments: []Comment{}}, nil
 	}
 
-	var out DiscussionThreadResponse
+	var raw rawDiscussionThreadResponse
 	threadPath := fmt.Sprintf("%s/_discuss/thread/%s", trackerPath(params.Project, params.Tracker), threadID)
-	if err := c.GetJSON(ctx, threadPath, nil, &out); err != nil {
-		return DiscussionThreadResponse{}, err
+	if err := c.GetJSON(ctx, threadPath, nil, &raw); err != nil {
+		return TicketCommentsResponse{}, err
 	}
-	return out, nil
+
+	return normalizeComments(raw.Thread), nil
+}
+
+func normalizeComments(thread rawDiscussionThread) TicketCommentsResponse {
+	comments := make([]Comment, 0, len(thread.Posts))
+	for _, post := range thread.Posts {
+		comments = append(comments, Comment{
+			ID:          post.Slug,
+			Author:      post.Author,
+			Body:        post.Text,
+			CreatedAt:   post.Timestamp,
+			EditedAt:    post.LastEdited,
+			Subject:     post.Subject,
+			IsMeta:      post.IsMeta,
+			Attachments: post.Attachments,
+		})
+	}
+
+	sort.SliceStable(comments, func(i int, j int) bool {
+		left := comments[i]
+		right := comments[j]
+
+		if left.CreatedAt != right.CreatedAt {
+			if left.CreatedAt == "" {
+				return false
+			}
+			if right.CreatedAt == "" {
+				return true
+			}
+			return left.CreatedAt < right.CreatedAt
+		}
+		return left.ID < right.ID
+	})
+
+	return TicketCommentsResponse{
+		Thread: CommentThread{
+			ID:      thread.ID,
+			Subject: thread.Subject,
+		},
+		Comments: comments,
+	}
 }
 
 func paginationQuery(page int, limit int) url.Values {

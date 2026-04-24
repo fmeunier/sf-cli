@@ -151,3 +151,119 @@ func TestTicketsListRejectsQueryFlagWithGuidance(t *testing.T) {
 		t.Fatalf("error.code = %v, want %q", errorValue["code"], "invalid_arguments")
 	}
 }
+
+func TestTicketsGetExecutesAPIRequest(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rest/p/test/tickets/42" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/rest/p/test/tickets/42")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","description":"Detailed ticket","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42","subject":""},"custom_fields":{"_milestone":"unreleased"}}}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "get", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got["command"] != "tickets.get" {
+		t.Fatalf("command = %v, want %q", got["command"], "tickets.get")
+	}
+	proposal := got["proposal"].(map[string]any)
+	target := proposal["target"].(map[string]any)
+	if target["ticket"] != float64(42) {
+		t.Fatalf("proposal.target.ticket = %v, want 42", target["ticket"])
+	}
+	result := got["result"].(map[string]any)
+	ticket := result["ticket"].(map[string]any)
+	if ticket["summary"] != "Answer" {
+		t.Fatalf("ticket.summary = %v, want %q", ticket["summary"], "Answer")
+	}
+}
+
+func TestTicketsCommentsFetchesTicketThenThread(t *testing.T) {
+	t.Parallel()
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/tickets/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","discussion_thread":{"_id":"thread-42"}}}`))
+		case "/rest/p/test/tickets/_discuss/thread/thread-42":
+			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-42","subject":"","posts":[{"author":"alice","text":"first comment","is_meta":false,"timestamp":"2026-04-24T00:00:00Z","slug":"a1"}]}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "comments", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+	if requestCount != 2 {
+		t.Fatalf("requestCount = %d, want 2", requestCount)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got["command"] != "tickets.comments" {
+		t.Fatalf("command = %v, want %q", got["command"], "tickets.comments")
+	}
+	result := got["result"].(map[string]any)
+	thread := result["thread"].(map[string]any)
+	posts := thread["posts"].([]any)
+	if len(posts) != 1 {
+		t.Fatalf("len(posts) = %d, want 1", len(posts))
+	}
+	post := posts[0].(map[string]any)
+	if post["text"] != "first comment" {
+		t.Fatalf("post.text = %v, want %q", post["text"], "first comment")
+	}
+}
+
+func TestTicketsCommentsReturnsAPINotFound(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"ticket not found"}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "comments", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, stdout)
+	if status != 1 {
+		t.Fatalf("Run() status = %d, want 1", status)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got["command"] != "tickets.comments" {
+		t.Fatalf("command = %v, want %q", got["command"], "tickets.comments")
+	}
+	errorValue := got["error"].(map[string]any)
+	if errorValue["code"] != "api_error" {
+		t.Fatalf("error.code = %v, want %q", errorValue["code"], "api_error")
+	}
+	message := errorValue["message"].(string)
+	if !bytes.Contains([]byte(message), []byte("ticket not found")) {
+		t.Fatalf("error.message = %q, want to mention ticket not found", message)
+	}
+}

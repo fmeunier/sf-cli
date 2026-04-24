@@ -26,6 +26,12 @@ type ticketsSearchConfig struct {
 	Limit   int
 }
 
+type ticketsGetConfig struct {
+	Project string
+	Tracker string
+	Ticket  int
+}
+
 func runTicketsList(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	config, err := parseTicketsListFlags(args)
 	command := "tickets.list"
@@ -62,6 +68,38 @@ func runTicketsSearch(ctx context.Context, client *api.Client, args []string) mo
 		Page:    config.Page,
 		Limit:   config.Limit,
 	})
+	if err != nil {
+		return apiErrorEnvelope(command, prop, err)
+	}
+
+	return successEnvelope(command, prop, result)
+}
+
+func runTicketsGet(ctx context.Context, client *api.Client, args []string) model.Envelope {
+	config, err := parseTicketsGetFlags("tickets get", args)
+	command := "tickets.get"
+	prop := proposal(command, "get_ticket", map[string]any{"project": config.Project, "tracker": config.Tracker, "ticket": config.Ticket}, nil)
+	if err != nil {
+		return errorEnvelope(command, prop, "invalid_arguments", err.Error())
+	}
+
+	result, err := client.GetTicket(ctx, api.GetTicketParams{Project: config.Project, Tracker: config.Tracker, TicketID: config.Ticket})
+	if err != nil {
+		return apiErrorEnvelope(command, prop, err)
+	}
+
+	return successEnvelope(command, prop, result)
+}
+
+func runTicketsComments(ctx context.Context, client *api.Client, args []string) model.Envelope {
+	config, err := parseTicketsGetFlags("tickets comments", args)
+	command := "tickets.comments"
+	prop := proposal(command, "get_ticket_comments", map[string]any{"project": config.Project, "tracker": config.Tracker, "ticket": config.Ticket}, nil)
+	if err != nil {
+		return errorEnvelope(command, prop, "invalid_arguments", err.Error())
+	}
+
+	result, err := client.GetTicketComments(ctx, api.GetTicketParams{Project: config.Project, Tracker: config.Tracker, TicketID: config.Ticket})
 	if err != nil {
 		return apiErrorEnvelope(command, prop, err)
 	}
@@ -121,6 +159,28 @@ func parseTicketsSearchFlags(args []string) (ticketsSearchConfig, error) {
 	}
 
 	config.Query = strings.TrimSpace(config.Query)
+	return config, nil
+}
+
+func parseTicketsGetFlags(name string, args []string) (ticketsGetConfig, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	config := ticketsGetConfig{}
+	fs.StringVar(&config.Project, "project", "", "SourceForge project shortname")
+	fs.StringVar(&config.Tracker, "tracker", "", "Tracker mount point")
+	fs.IntVar(&config.Ticket, "ticket", 0, "Ticket number")
+
+	if err := fs.Parse(args); err != nil {
+		return ticketsGetConfig{}, normalizeFlagError(err)
+	}
+	if err := validateTrackerTarget(config.Project, config.Tracker); err != nil {
+		return ticketsGetConfig{}, err
+	}
+	if config.Ticket <= 0 {
+		return ticketsGetConfig{}, fmt.Errorf("--ticket must be > 0")
+	}
+
 	return config, nil
 }
 

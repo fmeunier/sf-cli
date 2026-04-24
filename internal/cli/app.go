@@ -104,6 +104,10 @@ func handleTickets(ctx context.Context, client *api.Client, args []string) model
 		return runTicketsList(ctx, client, args[1:])
 	case "search":
 		return runTicketsSearch(ctx, client, args[1:])
+	case "get":
+		return runTicketsGet(ctx, client, args[1:])
+	case "comments":
+		return runTicketsComments(ctx, client, args[1:])
 	default:
 		command := "tickets." + args[0]
 		return errorEnvelope(command, proposal(command, actionForTickets(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet", command))

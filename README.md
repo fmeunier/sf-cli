@@ -138,9 +138,16 @@ Failures return the same envelope shape with `ok: false`, `result: null`, and an
 
 Warnings are reported at the top-level `warnings` field so callers do not need to inspect command-specific payloads for partial-success metadata.
 
-For ticket reads, the canonical ticket schema is defined in `internal/cli/ticket_contract.go`. Shared fields keep the same names and meanings across `tickets list`, `tickets search`, and `tickets get`; collection responses return those ticket objects in `result.tickets`, while detail responses return one ticket object in `result.ticket`.
+For ticket reads, collection commands return ticket objects in `result.tickets`, while the detail command returns one ticket object in `result.ticket`.
 
-The contract explicitly marks required versus optional fields. Optional fields are omitted when SourceForge does not provide a meaningful value, and ticket payloads do not emit JSON `null` today. Compatible schema changes should be additive, start as optional fields, and update the contract plus its conformance tests before widening command coverage.
+The canonical ticket contract is:
+- `tickets list` and `tickets search` always return `ticket_num`, `summary`, and `status`.
+- `tickets list` and `tickets search` may also return `reported_by`, `assigned_to`, `labels`, `created_date`, and `mod_date` when SourceForge provides meaningful values.
+- `tickets get` always returns `ticket_num`, `summary`, `description`, `status`, `private`, `discussion_disabled`, and `discussion_thread`.
+- `tickets get` may also return `reported_by`, `assigned_to`, `labels`, `created_date`, `mod_date`, `discussion_thread_url`, `custom_fields`, `attachments`, and `related_artifacts` when SourceForge provides meaningful values.
+- Ticket payloads do not emit JSON `null` today. Optional fields are omitted when they are empty, and detail-only fields must not appear in `tickets list` or `tickets search`.
+
+Compatible schema changes should be additive, start as optional fields, and update the documentation plus the conformance tests before widening command coverage.
 
 `tickets activity` returns tickets ordered by most recent activity, including `updated_at`, `last_comment_at`, and `last_comment_author` when comment metadata is available.
 

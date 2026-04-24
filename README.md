@@ -138,7 +138,7 @@ For ticket reads, overlapping ticket fields use the same names and shapes across
 
 `tickets comments` returns normalized comment data in `result.comments`, ordered by `created_at` ascending and then `id` ascending when timestamps are equal or missing. Each comment uses the same shape: `id`, `author`, `body`, `created_at`, `edited_at`, `subject`, `is_meta`, and `attachments`. Minimal thread metadata remains in `result.thread`.
 
-Paginated collection commands expose `result.pagination` with `page`, `limit`, `count`, `has_previous`, `has_next`, `previous_page`, and `next_page`. Unpaginated collection commands omit `result.pagination` entirely.
+Paginated collection commands expose cursor-based `result.pagination` with `limit`, `count`, `next_cursor`, and `has_more`. Request the next page with `--cursor` using the opaque token returned by a previous response. Unpaginated collection commands omit `result.pagination` entirely.
 
 `tracker schema` keeps best-effort field values and now also exposes `fields[].validation` with structured validation metadata where the upstream tracker data permits it. Today that includes inferred field `type`, normalized `allowed_values`, and best-effort `default` values such as the default milestone when SourceForge exposes one.
 

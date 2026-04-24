@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type Milestone struct {
@@ -21,7 +22,6 @@ type Milestone struct {
 type TicketListResponse struct {
 	Tickets    []Ticket    `json:"tickets"`
 	Count      int         `json:"count"`
-	Page       int         `json:"page"`
 	Limit      int         `json:"limit"`
 	Pagination Pagination  `json:"pagination"`
 	Milestones []Milestone `json:"milestones,omitempty"`
@@ -30,7 +30,6 @@ type TicketListResponse struct {
 type TicketSearchResponse struct {
 	Tickets       []Ticket       `json:"tickets"`
 	Count         int            `json:"count"`
-	Page          int            `json:"page"`
 	Limit         int            `json:"limit"`
 	Pagination    Pagination     `json:"pagination"`
 	Sort          string         `json:"sort,omitempty"`
@@ -38,19 +37,16 @@ type TicketSearchResponse struct {
 }
 
 type Pagination struct {
-	Page         int  `json:"page"`
-	Limit        int  `json:"limit"`
-	Count        int  `json:"count"`
-	HasPrevious  bool `json:"has_previous"`
-	HasNext      bool `json:"has_next"`
-	PreviousPage *int `json:"previous_page"`
-	NextPage     *int `json:"next_page"`
+	Limit      int    `json:"limit"`
+	Count      int    `json:"count"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	HasMore    bool   `json:"has_more"`
 }
 
 type ListTicketsParams struct {
 	Project string
 	Tracker string
-	Page    int
+	Cursor  string
 	Limit   int
 }
 
@@ -58,7 +54,7 @@ type SearchTicketsParams struct {
 	Project string
 	Tracker string
 	Query   string
-	Page    int
+	Cursor  string
 	Limit   int
 }
 
@@ -145,23 +141,33 @@ type RawDiscussionPost struct {
 }
 
 func (c *Client) ListTickets(ctx context.Context, params ListTicketsParams) (TicketListResponse, error) {
-	var out TicketListResponse
-	if err := c.GetJSON(ctx, trackerPath(params.Project, params.Tracker), paginationQuery(params.Page, params.Limit), &out); err != nil {
+	page, err := cursorToPage(params.Cursor)
+	if err != nil {
 		return TicketListResponse{}, err
 	}
-	out.Pagination = normalizePagination(out.Page, out.Limit, out.Count, len(out.Tickets))
+
+	var out TicketListResponse
+	if err := c.GetJSON(ctx, trackerPath(params.Project, params.Tracker), paginationQuery(page, params.Limit), &out); err != nil {
+		return TicketListResponse{}, err
+	}
+	out.Pagination = normalizePagination(page, out.Limit, out.Count, len(out.Tickets))
 	return out, nil
 }
 
 func (c *Client) SearchTickets(ctx context.Context, params SearchTicketsParams) (TicketSearchResponse, error) {
-	query := paginationQuery(params.Page, params.Limit)
+	page, err := cursorToPage(params.Cursor)
+	if err != nil {
+		return TicketSearchResponse{}, err
+	}
+
+	query := paginationQuery(page, params.Limit)
 	query.Set("q", params.Query)
 
 	var out TicketSearchResponse
 	if err := c.GetJSON(ctx, trackerPath(params.Project, params.Tracker)+"/search", query, &out); err != nil {
 		return TicketSearchResponse{}, err
 	}
-	out.Pagination = normalizePagination(out.Page, out.Limit, out.Count, len(out.Tickets))
+	out.Pagination = normalizePagination(page, out.Limit, out.Count, len(out.Tickets))
 	return out, nil
 }
 
@@ -235,24 +241,38 @@ func normalizeComments(thread rawDiscussionThread) TicketCommentsResponse {
 
 func normalizePagination(page int, limit int, count int, returned int) Pagination {
 	pagination := Pagination{
-		Page:  page,
 		Limit: limit,
 		Count: count,
 	}
 
-	if page > 0 {
-		pagination.HasPrevious = true
-		previousPage := page - 1
-		pagination.PreviousPage = &previousPage
-	}
-
 	if limit > 0 && page*limit+returned < count {
-		pagination.HasNext = true
-		nextPage := page + 1
-		pagination.NextPage = &nextPage
+		pagination.HasMore = true
+		pagination.NextCursor = pageToCursor(page + 1)
 	}
 
 	return pagination
+}
+
+func cursorToPage(cursor string) (int, error) {
+	trimmed := strings.TrimSpace(cursor)
+	if trimmed == "" {
+		return 0, nil
+	}
+
+	page, err := strconv.Atoi(trimmed)
+	if err != nil || page < 0 {
+		return 0, fmt.Errorf("invalid cursor %q", cursor)
+	}
+
+	return page, nil
+}
+
+func pageToCursor(page int) string {
+	if page <= 0 {
+		return ""
+	}
+
+	return strconv.Itoa(page)
 }
 
 func paginationQuery(page int, limit int) url.Values {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"sf-cli/internal/api"
@@ -15,7 +16,7 @@ import (
 type ticketsListConfig struct {
 	Project string
 	Tracker string
-	Page    int
+	Cursor  string
 	Limit   int
 }
 
@@ -23,7 +24,7 @@ type ticketsSearchConfig struct {
 	Project string
 	Tracker string
 	Query   string
-	Page    int
+	Cursor  string
 	Limit   int
 }
 
@@ -36,7 +37,7 @@ type ticketsGetConfig struct {
 func runTicketsList(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	config, err := parseTicketsListFlags(args)
 	command := "tickets.list"
-	prop := proposal(command, "list_tickets", map[string]any{"project": config.Project, "tracker": config.Tracker}, map[string]any{"page": config.Page, "limit": config.Limit})
+	prop := proposal(command, "list_tickets", map[string]any{"project": config.Project, "tracker": config.Tracker}, map[string]any{"cursor": config.Cursor, "limit": config.Limit})
 	if err != nil {
 		return errorEnvelope(command, prop, "invalid_arguments", err.Error())
 	}
@@ -44,7 +45,7 @@ func runTicketsList(ctx context.Context, client *api.Client, args []string) mode
 	result, err := client.ListTickets(ctx, api.ListTicketsParams{
 		Project: config.Project,
 		Tracker: config.Tracker,
-		Page:    config.Page,
+		Cursor:  config.Cursor,
 		Limit:   config.Limit,
 	})
 	if err != nil {
@@ -57,7 +58,7 @@ func runTicketsList(ctx context.Context, client *api.Client, args []string) mode
 func runTicketsSearch(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	config, err := parseTicketsSearchFlags(args)
 	command := "tickets.search"
-	prop := proposal(command, "search_tickets", map[string]any{"project": config.Project, "tracker": config.Tracker}, map[string]any{"query": config.Query, "page": config.Page, "limit": config.Limit})
+	prop := proposal(command, "search_tickets", map[string]any{"project": config.Project, "tracker": config.Tracker}, map[string]any{"query": config.Query, "cursor": config.Cursor, "limit": config.Limit})
 	if err != nil {
 		return errorEnvelope(command, prop, "invalid_arguments", err.Error())
 	}
@@ -66,7 +67,7 @@ func runTicketsSearch(ctx context.Context, client *api.Client, args []string) mo
 		Project: config.Project,
 		Tracker: config.Tracker,
 		Query:   config.Query,
-		Page:    config.Page,
+		Cursor:  config.Cursor,
 		Limit:   config.Limit,
 	})
 	if err != nil {
@@ -120,7 +121,6 @@ type ticketActivity struct {
 type ticketsActivityResponse struct {
 	Tickets    []ticketActivity `json:"tickets"`
 	Count      int              `json:"count"`
-	Page       int              `json:"page"`
 	Limit      int              `json:"limit"`
 	Pagination api.Pagination   `json:"pagination"`
 }
@@ -128,7 +128,7 @@ type ticketsActivityResponse struct {
 func runTicketsActivity(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	config, err := parseTicketsListFlags(args)
 	command := "tickets.activity"
-	prop := proposal(command, "list_ticket_activity", map[string]any{"project": config.Project, "tracker": config.Tracker}, map[string]any{"page": config.Page, "limit": config.Limit})
+	prop := proposal(command, "list_ticket_activity", map[string]any{"project": config.Project, "tracker": config.Tracker}, map[string]any{"cursor": config.Cursor, "limit": config.Limit})
 	if err != nil {
 		return errorEnvelope(command, prop, "invalid_arguments", err.Error())
 	}
@@ -136,7 +136,7 @@ func runTicketsActivity(ctx context.Context, client *api.Client, args []string) 
 	listResult, err := client.ListTickets(ctx, api.ListTicketsParams{
 		Project: config.Project,
 		Tracker: config.Tracker,
-		Page:    config.Page,
+		Cursor:  config.Cursor,
 		Limit:   config.Limit,
 	})
 	if err != nil {
@@ -179,7 +179,6 @@ func runTicketsActivity(ctx context.Context, client *api.Client, args []string) 
 	return successEnvelope(command, prop, ticketsActivityResponse{
 		Tickets:    activities,
 		Count:      listResult.Count,
-		Page:       listResult.Page,
 		Limit:      listResult.Limit,
 		Pagination: listResult.Pagination,
 	})
@@ -205,7 +204,7 @@ func parseTicketsListFlags(args []string) (ticketsListConfig, error) {
 	config := ticketsListConfig{}
 	fs.StringVar(&config.Project, "project", "", "SourceForge project shortname")
 	fs.StringVar(&config.Tracker, "tracker", "", "Tracker mount point")
-	fs.IntVar(&config.Page, "page", 0, "Result page to fetch")
+	fs.StringVar(&config.Cursor, "cursor", "", "Opaque cursor for the next page")
 	fs.IntVar(&config.Limit, "limit", 25, "Page size")
 
 	if err := fs.Parse(args); err != nil {
@@ -214,7 +213,7 @@ func parseTicketsListFlags(args []string) (ticketsListConfig, error) {
 	if err := validateTrackerTarget(config.Project, config.Tracker); err != nil {
 		return ticketsListConfig{}, err
 	}
-	if err := validatePagination(config.Page, config.Limit); err != nil {
+	if err := validatePagination(config.Cursor, config.Limit); err != nil {
 		return ticketsListConfig{}, err
 	}
 
@@ -229,7 +228,7 @@ func parseTicketsSearchFlags(args []string) (ticketsSearchConfig, error) {
 	fs.StringVar(&config.Project, "project", "", "SourceForge project shortname")
 	fs.StringVar(&config.Tracker, "tracker", "", "Tracker mount point")
 	fs.StringVar(&config.Query, "query", "", "Ticket search query")
-	fs.IntVar(&config.Page, "page", 0, "Result page to fetch")
+	fs.StringVar(&config.Cursor, "cursor", "", "Opaque cursor for the next page")
 	fs.IntVar(&config.Limit, "limit", 25, "Page size")
 
 	if err := fs.Parse(args); err != nil {
@@ -241,7 +240,7 @@ func parseTicketsSearchFlags(args []string) (ticketsSearchConfig, error) {
 	if strings.TrimSpace(config.Query) == "" {
 		return ticketsSearchConfig{}, fmt.Errorf("missing required --query")
 	}
-	if err := validatePagination(config.Page, config.Limit); err != nil {
+	if err := validatePagination(config.Cursor, config.Limit); err != nil {
 		return ticketsSearchConfig{}, err
 	}
 
@@ -281,14 +280,28 @@ func validateTrackerTarget(project string, tracker string) error {
 	return nil
 }
 
-func validatePagination(page int, limit int) error {
-	if page < 0 {
-		return fmt.Errorf("--page must be >= 0")
+func validatePagination(cursor string, limit int) error {
+	if _, err := apiCursorToPage(cursor); err != nil {
+		return err
 	}
 	if limit <= 0 {
 		return fmt.Errorf("--limit must be > 0")
 	}
 	return nil
+}
+
+func apiCursorToPage(cursor string) (int, error) {
+	trimmed := strings.TrimSpace(cursor)
+	if trimmed == "" {
+		return 0, nil
+	}
+
+	page, err := strconv.Atoi(trimmed)
+	if err != nil || page < 0 {
+		return 0, fmt.Errorf("--cursor must be an opaque numeric token returned by this CLI")
+	}
+
+	return page, nil
 }
 
 func hasFlag(args []string, name string) bool {

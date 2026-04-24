@@ -28,6 +28,8 @@ func helpText(args []string) (string, bool) {
 			return ticketsListUsage("tickets list"), true
 		case "tickets.search":
 			return ticketsSearchUsage(), true
+		case "tickets.activity":
+			return ticketsListUsage("tickets activity"), true
 		case "tickets.get":
 			return ticketsGetUsage("tickets get"), true
 		case "tickets.comments":
@@ -114,11 +116,11 @@ func ticketsUsage() string {
 }
 
 func ticketsListUsage(command string) string {
-	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER [--page N] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --page N           Result page to fetch (default 0)\n  --limit N          Page size (default 25)\n"
+	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n"
 }
 
 func ticketsSearchUsage() string {
-	return "Usage:\n  sf tickets search --project PROJECT --tracker TRACKER --query QUERY [--page N] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --query QUERY      Ticket search query\n  --page N           Result page to fetch (default 0)\n  --limit N          Page size (default 25)\n"
+	return "Usage:\n  sf tickets search --project PROJECT --tracker TRACKER --query QUERY [--cursor TOKEN] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --query QUERY      Ticket search query\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n"
 }
 
 func ticketsGetUsage(command string) string {

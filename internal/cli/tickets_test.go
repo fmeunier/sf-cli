@@ -51,14 +51,14 @@ func TestTicketsListExecutesAPIRequest(t *testing.T) {
 		t.Fatalf("proposal = %#v, want action %q", got.Proposal, "list_tickets")
 	}
 	pagination := result["pagination"].(map[string]any)
-	if pagination["page"] != float64(0) {
-		t.Fatalf("pagination.page = %v, want 0", pagination["page"])
+	if pagination["count"] != float64(1) {
+		t.Fatalf("pagination.count = %v, want 1", pagination["count"])
 	}
-	if pagination["has_previous"] != false {
-		t.Fatalf("pagination.has_previous = %v, want false", pagination["has_previous"])
+	if pagination["has_more"] != false {
+		t.Fatalf("pagination.has_more = %v, want false", pagination["has_more"])
 	}
-	if pagination["has_next"] != false {
-		t.Fatalf("pagination.has_next = %v, want false", pagination["has_next"])
+	if _, ok := pagination["next_cursor"]; ok {
+		t.Fatalf("pagination.next_cursor = %v, want omitted", pagination["next_cursor"])
 	}
 	tickets := result["tickets"].([]any)
 	firstTicket := tickets[0].(map[string]any)
@@ -69,6 +69,9 @@ func TestTicketsListExecutesAPIRequest(t *testing.T) {
 		t.Fatalf("ticket.assigned_to = %v, want %q", firstTicket["assigned_to"], "alice")
 	}
 	inputs := got.Proposal.Inputs
+	if inputs["cursor"] != "" {
+		t.Fatalf("proposal.inputs.cursor = %v, want empty string", inputs["cursor"])
+	}
 	if inputs["limit"] != float64(10) {
 		t.Fatalf("proposal.inputs.limit = %v, want 10", inputs["limit"])
 	}
@@ -112,11 +115,14 @@ func TestTicketsSearchExecutesAPIRequest(t *testing.T) {
 		t.Fatalf("result.sort = %v, want %q", result["sort"], "ticket_num_i desc")
 	}
 	pagination := result["pagination"].(map[string]any)
-	if pagination["page"] != float64(0) {
-		t.Fatalf("pagination.page = %v, want 0", pagination["page"])
+	if pagination["count"] != float64(1) {
+		t.Fatalf("pagination.count = %v, want 1", pagination["count"])
 	}
-	if pagination["has_next"] != false {
-		t.Fatalf("pagination.has_next = %v, want false", pagination["has_next"])
+	if pagination["has_more"] != false {
+		t.Fatalf("pagination.has_more = %v, want false", pagination["has_more"])
+	}
+	if _, ok := pagination["next_cursor"]; ok {
+		t.Fatalf("pagination.next_cursor = %v, want omitted", pagination["next_cursor"])
 	}
 	tickets := result["tickets"].([]any)
 	firstTicket := tickets[0].(map[string]any)
@@ -184,6 +190,9 @@ func TestTicketsActivityReturnsMostRecentUpdates(t *testing.T) {
 	pagination := result["pagination"].(map[string]any)
 	if pagination["count"] != float64(2) {
 		t.Fatalf("pagination.count = %v, want 2", pagination["count"])
+	}
+	if pagination["has_more"] != false {
+		t.Fatalf("pagination.has_more = %v, want false", pagination["has_more"])
 	}
 }
 
@@ -467,17 +476,11 @@ func TestTicketsListPaginationFirstPageExposesNextOnly(t *testing.T) {
 	}
 
 	pagination := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["pagination"].(map[string]any)
-	if pagination["has_previous"] != false {
-		t.Fatalf("has_previous = %v, want false", pagination["has_previous"])
+	if pagination["has_more"] != true {
+		t.Fatalf("has_more = %v, want true", pagination["has_more"])
 	}
-	if pagination["has_next"] != true {
-		t.Fatalf("has_next = %v, want true", pagination["has_next"])
-	}
-	if pagination["next_page"] != float64(1) {
-		t.Fatalf("next_page = %v, want 1", pagination["next_page"])
-	}
-	if pagination["previous_page"] != nil {
-		t.Fatalf("previous_page = %v, want nil", pagination["previous_page"])
+	if pagination["next_cursor"] != "1" {
+		t.Fatalf("next_cursor = %v, want %q", pagination["next_cursor"], "1")
 	}
 }
 
@@ -491,23 +494,17 @@ func TestTicketsSearchPaginationMiddlePageExposesBothDirections(t *testing.T) {
 	defer server.Close()
 
 	stdout := &bytes.Buffer{}
-	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open", "--page", "1", "--limit", "2"}, stdout)
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open", "--cursor", "1", "--limit", "2"}, stdout)
 	if status != 0 {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
 	pagination := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["pagination"].(map[string]any)
-	if pagination["has_previous"] != true {
-		t.Fatalf("has_previous = %v, want true", pagination["has_previous"])
+	if pagination["has_more"] != true {
+		t.Fatalf("has_more = %v, want true", pagination["has_more"])
 	}
-	if pagination["previous_page"] != float64(0) {
-		t.Fatalf("previous_page = %v, want 0", pagination["previous_page"])
-	}
-	if pagination["has_next"] != true {
-		t.Fatalf("has_next = %v, want true", pagination["has_next"])
-	}
-	if pagination["next_page"] != float64(2) {
-		t.Fatalf("next_page = %v, want 2", pagination["next_page"])
+	if pagination["next_cursor"] != "2" {
+		t.Fatalf("next_cursor = %v, want %q", pagination["next_cursor"], "2")
 	}
 }
 
@@ -521,23 +518,17 @@ func TestTicketsListPaginationFinalPageExposesNoNextPage(t *testing.T) {
 	defer server.Close()
 
 	stdout := &bytes.Buffer{}
-	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets", "--page", "2", "--limit", "2"}, stdout)
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets", "--cursor", "2", "--limit", "2"}, stdout)
 	if status != 0 {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
 	pagination := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["pagination"].(map[string]any)
-	if pagination["has_previous"] != true {
-		t.Fatalf("has_previous = %v, want true", pagination["has_previous"])
+	if pagination["has_more"] != false {
+		t.Fatalf("has_more = %v, want false", pagination["has_more"])
 	}
-	if pagination["previous_page"] != float64(1) {
-		t.Fatalf("previous_page = %v, want 1", pagination["previous_page"])
-	}
-	if pagination["has_next"] != false {
-		t.Fatalf("has_next = %v, want false", pagination["has_next"])
-	}
-	if pagination["next_page"] != nil {
-		t.Fatalf("next_page = %v, want nil", pagination["next_page"])
+	if _, ok := pagination["next_cursor"]; ok {
+		t.Fatalf("next_cursor = %v, want omitted", pagination["next_cursor"])
 	}
 }
 

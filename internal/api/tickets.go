@@ -111,6 +111,7 @@ type Comment struct {
 	CreatedAt   string `json:"created_at,omitempty"`
 	EditedAt    any    `json:"edited_at,omitempty"`
 	Subject     string `json:"subject,omitempty"`
+	Type        string `json:"type"`
 	IsMeta      bool   `json:"is_meta"`
 	Attachments []any  `json:"attachments,omitempty"`
 }
@@ -209,6 +210,7 @@ func normalizeComments(thread rawDiscussionThread) TicketCommentsResponse {
 			CreatedAt:   post.Timestamp,
 			EditedAt:    post.LastEdited,
 			Subject:     post.Subject,
+			Type:        classifyCommentType(post),
 			IsMeta:      post.IsMeta,
 			Attachments: post.Attachments,
 		})
@@ -237,6 +239,16 @@ func normalizeComments(thread rawDiscussionThread) TicketCommentsResponse {
 		},
 		Comments: comments,
 	}
+}
+
+func classifyCommentType(post RawDiscussionPost) string {
+	if post.IsMeta {
+		return "system"
+	}
+	if strings.TrimSpace(post.Author) != "" || strings.TrimSpace(post.Text) != "" || strings.TrimSpace(post.Subject) != "" || len(post.Attachments) != 0 {
+		return "user"
+	}
+	return "unknown"
 }
 
 func normalizePagination(page int, limit int, count int, returned int) Pagination {

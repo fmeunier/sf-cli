@@ -60,9 +60,9 @@ var listTicketProjectionFields = []string{"id", "title", "status", "reported_by"
 
 var getTicketProjectionFields = []string{"id", "title", "description", "status", "reported_by", "assigned_to", "labels", "private", "discussion_disabled", "custom_fields", "attachments", "related_artifacts", "created_at", "updated_at"}
 
-var commentProjectionFields = []string{"id", "author", "body", "created_at", "edited_at", "subject", "is_meta", "attachments"}
+var commentProjectionFields = []string{"id", "author", "body", "created_at", "edited_at", "subject", "type", "is_meta", "attachments"}
 
-var activityProjectionFields = []string{"id", "title", "status", "updated_at", "last_comment_at", "last_comment_author"}
+var activityProjectionFields = []string{"id", "title", "status", "activity_type", "updated_at", "last_comment_at", "last_comment_author"}
 
 var commentFieldProjectors = map[string]func(api.Comment) any{
 	"attachments": func(comment api.Comment) any { return comment.Attachments },
@@ -73,9 +73,11 @@ var commentFieldProjectors = map[string]func(api.Comment) any{
 	"id":          func(comment api.Comment) any { return comment.ID },
 	"is_meta":     func(comment api.Comment) any { return comment.IsMeta },
 	"subject":     func(comment api.Comment) any { return comment.Subject },
+	"type":        func(comment api.Comment) any { return comment.Type },
 }
 
 var activityFieldProjectors = map[string]func(ticketActivity) any{
+	"activity_type":       func(activity ticketActivity) any { return activity.ActivityType },
 	"id":                  func(activity ticketActivity) any { return activity.TicketNum },
 	"last_comment_at":     func(activity ticketActivity) any { return activity.LastCommentAt },
 	"last_comment_author": func(activity ticketActivity) any { return activity.LastCommentAuthor },
@@ -175,6 +177,7 @@ type ticketActivity struct {
 	TicketNum         int    `json:"ticket_num"`
 	Summary           string `json:"summary"`
 	Status            string `json:"status"`
+	ActivityType      string `json:"activity_type"`
 	UpdatedAt         string `json:"updated_at,omitempty"`
 	LastCommentAt     string `json:"last_comment_at,omitempty"`
 	LastCommentAuthor string `json:"last_comment_author,omitempty"`
@@ -208,10 +211,11 @@ func runTicketsActivity(ctx context.Context, client *api.Client, args []string) 
 	activities := make([]ticketActivity, 0, len(listResult.Tickets))
 	for _, ticket := range listResult.Tickets {
 		activity := ticketActivity{
-			TicketNum: ticket.TicketNum,
-			Summary:   ticket.Summary,
-			Status:    ticket.Status,
-			UpdatedAt: ticket.ModDate,
+			TicketNum:    ticket.TicketNum,
+			Summary:      ticket.Summary,
+			Status:       ticket.Status,
+			ActivityType: classifyTicketActivityType(ticket.ModDate, api.Comment{}, false),
+			UpdatedAt:    ticket.ModDate,
 		}
 
 		commentsResult, err := client.GetTicketComments(ctx, api.GetTicketParams{Project: config.Project, Tracker: config.Tracker, TicketID: ticket.TicketNum})
@@ -224,6 +228,7 @@ func runTicketsActivity(ctx context.Context, client *api.Client, args []string) 
 			if activity.UpdatedAt == "" || lastComment.CreatedAt > activity.UpdatedAt {
 				activity.UpdatedAt = lastComment.CreatedAt
 			}
+			activity.ActivityType = classifyTicketActivityType(ticket.ModDate, lastComment, true)
 		}
 
 		activities = append(activities, activity)
@@ -258,6 +263,16 @@ func lastComment(comments []api.Comment) (api.Comment, bool) {
 		}
 	}
 	return api.Comment{}, false
+}
+
+func classifyTicketActivityType(ticketUpdatedAt string, lastComment api.Comment, hasLastComment bool) string {
+	if hasLastComment && lastComment.CreatedAt != "" && (ticketUpdatedAt == "" || lastComment.CreatedAt >= ticketUpdatedAt) {
+		return "comment"
+	}
+	if ticketUpdatedAt != "" {
+		return "ticket"
+	}
+	return "unknown"
 }
 
 func parseTicketsListFlags(args []string) (ticketsListConfig, error) {

@@ -22,6 +22,11 @@ type rootConfig struct {
 }
 
 func Run(args []string, stdout io.Writer) int {
+	if help, ok := helpText(args); ok {
+		_, _ = io.WriteString(stdout, help)
+		return 0
+	}
+
 	envelope := execute(args)
 	if err := output.WriteJSON(stdout, envelope); err != nil {
 		fallback := fmt.Sprintf("{\n  \"version\": \"v1\",\n  \"mode\": \"read_only\",\n  \"command\": %q,\n  \"ok\": false,\n  \"result\": null,\n  \"error\": {\n    \"code\": \"output_error\",\n    \"message\": %q\n  }\n}\n", envelope.Command, err.Error())
@@ -42,7 +47,7 @@ func execute(args []string) model.Envelope {
 	}
 
 	if len(remaining) == 0 {
-		return errorEnvelope("", nil, "invalid_arguments", "missing command")
+		return errorEnvelope("", nil, "invalid_arguments", "missing command\n\n"+rootUsage())
 	}
 
 	client, err := api.NewClient(api.Options{
@@ -61,13 +66,13 @@ func execute(args []string) model.Envelope {
 	case "tracker":
 		return handleTracker(context.Background(), client, remaining[1:])
 	default:
-		return errorEnvelope(remaining[0], nil, "invalid_command", fmt.Sprintf("unknown command %q", remaining[0]))
+		return errorEnvelope(remaining[0], nil, "invalid_command", fmt.Sprintf("unknown command %q\n\n%s", remaining[0], rootUsage()))
 	}
 }
 
 func handleProject(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	if len(args) == 0 {
-		return errorEnvelope("project", proposal("project", "dispatch_project_command", nil, nil), "invalid_arguments", "missing project subcommand")
+		return errorEnvelope("project", proposal("project", "dispatch_project_command", nil, nil), "invalid_arguments", "missing project subcommand\n\n"+projectUsage())
 	}
 
 	switch args[0] {
@@ -75,7 +80,7 @@ func handleProject(ctx context.Context, client *api.Client, args []string) model
 		return runProjectTools(ctx, client, args[1:])
 	default:
 		command := "project." + args[0]
-		return errorEnvelope(command, proposal(command, actionForProject(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet", command))
+		return errorEnvelope(command, proposal(command, actionForProject(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet\n\n%s", command, projectUsage()))
 	}
 }
 
@@ -96,7 +101,7 @@ func parseRootFlags(args []string) (rootConfig, []string, error) {
 
 func handleTickets(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	if len(args) == 0 {
-		return errorEnvelope("tickets", proposal("tickets", "dispatch_tickets_command", nil, nil), "invalid_arguments", "missing tickets subcommand")
+		return errorEnvelope("tickets", proposal("tickets", "dispatch_tickets_command", nil, nil), "invalid_arguments", "missing tickets subcommand\n\n"+ticketsUsage())
 	}
 
 	switch args[0] {
@@ -110,13 +115,13 @@ func handleTickets(ctx context.Context, client *api.Client, args []string) model
 		return runTicketsComments(ctx, client, args[1:])
 	default:
 		command := "tickets." + args[0]
-		return errorEnvelope(command, proposal(command, actionForTickets(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet", command))
+		return errorEnvelope(command, proposal(command, actionForTickets(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet\n\n%s", command, ticketsUsage()))
 	}
 }
 
 func handleTracker(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	if len(args) == 0 {
-		return errorEnvelope("tracker", proposal("tracker", "dispatch_tracker_command", nil, nil), "invalid_arguments", "missing tracker subcommand")
+		return errorEnvelope("tracker", proposal("tracker", "dispatch_tracker_command", nil, nil), "invalid_arguments", "missing tracker subcommand\n\n"+trackerUsage())
 	}
 
 	switch args[0] {
@@ -124,7 +129,7 @@ func handleTracker(ctx context.Context, client *api.Client, args []string) model
 		return runTrackerSchema(ctx, client, args[1:])
 	default:
 		command := "tracker." + args[0]
-		return errorEnvelope(command, proposal(command, actionForTracker(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet", command))
+		return errorEnvelope(command, proposal(command, actionForTracker(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet\n\n%s", command, trackerUsage()))
 	}
 }
 
@@ -173,7 +178,7 @@ func resolveToken(flagToken string, envToken string) string {
 
 func normalizeFlagError(err error) error {
 	if errors.Is(err, flag.ErrHelp) {
-		return errors.New("help output is not supported; use JSON command invocations")
+		return errors.New("help requested; run `sf help` or `sf <command> --help`")
 	}
 	return err
 }

@@ -145,6 +145,7 @@ The canonical ticket contract is:
 - `tickets list` and `tickets search` may also return `reported_by`, `assigned_to`, `labels`, `created_date`, and `mod_date` when SourceForge provides meaningful values.
 - `tickets get` always returns `ticket_num`, `summary`, `description`, `status`, `private`, `discussion_disabled`, and `discussion_thread`.
 - `tickets get` may also return `reported_by`, `assigned_to`, `labels`, `created_date`, `mod_date`, `discussion_thread_url`, `custom_fields`, `attachments`, and `related_artifacts` when SourceForge provides meaningful values.
+- `tickets get` keeps `discussion_thread` limited to thread metadata needed to fetch comments later. Embedded discussion posts are omitted; use `tickets comments` for comment bodies and normalized comment types.
 - Ticket payloads do not emit JSON `null` today. Optional fields are omitted when they are empty, and detail-only fields must not appear in `tickets list` or `tickets search`.
 
 Compatible schema changes should be additive, start as optional fields, and update the documentation plus the conformance tests before widening command coverage.
@@ -158,7 +159,7 @@ The `tickets activity` contract for `activity_type` is:
 
 This mapping is best-effort because SourceForge does not expose a first-class activity event type in ticket activity responses. `sf-cli` derives `activity_type` from the ticket `mod_date` plus the normalized latest comment timestamp when available, and falls back to `unknown` when those provider-specific signals are too sparse or ambiguous.
 
-`tickets comments` returns normalized comment data in `result.comments`, ordered by `created_at` ascending and then `id` ascending when timestamps are equal or missing. Each comment uses the same shape: `id`, `author`, `body`, `created_at`, `edited_at`, `subject`, `type`, `is_meta`, and `attachments`. `type` is the normalized classification: `system` for SourceForge meta/system posts (`is_meta: true`), `user` for non-meta posts with recognizable user-authored content, and `unknown` as a fallback for provider-specific or ambiguous post forms that do not clearly map to either class. Minimal thread metadata remains in `result.thread`.
+`tickets comments` returns normalized comment data in `result.comments`, ordered by `created_at` ascending and then `id` ascending when timestamps are equal or missing. Each comment uses the same shape: `id`, `author`, `body`, `created_at`, `edited_at`, `subject`, `type`, `is_meta`, and `attachments`. `type` is the normalized classification: `system` for SourceForge meta/system posts (`is_meta: true`) and `human` for all non-meta posts. Provider-specific or ambiguous non-meta comment forms collapse to `human` so the contract stays small and stable. Minimal thread metadata remains in `result.thread`.
 
 Most read/query commands also accept `--fields` to return a compact projection instead of the full repeated payload. For ticket-oriented commands, compact field names use the shorter aliases `id`, `title`, `created_at`, and `updated_at`.
 

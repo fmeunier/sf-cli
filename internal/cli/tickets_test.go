@@ -288,6 +288,40 @@ func TestTicketsGetExecutesAPIRequest(t *testing.T) {
 	}
 }
 
+func TestTicketsGetOmitsEmbeddedDiscussionPosts(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rest/p/test/tickets/42" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/rest/p/test/tickets/42")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","description":"Detailed ticket","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42","discussion_id":"discussion-42","subject":"Discussion","posts":[{"author":"alice","text":"first comment","is_meta":false,"timestamp":"2026-04-24T00:00:00Z","slug":"a1"}]}}}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "get", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	ticket := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["ticket"].(map[string]any)
+	thread := ticket["discussion_thread"].(map[string]any)
+	if thread["_id"] != "thread-42" {
+		t.Fatalf("discussion_thread._id = %v, want %q", thread["_id"], "thread-42")
+	}
+	if thread["discussion_id"] != "discussion-42" {
+		t.Fatalf("discussion_thread.discussion_id = %v, want %q", thread["discussion_id"], "discussion-42")
+	}
+	if thread["subject"] != "Discussion" {
+		t.Fatalf("discussion_thread.subject = %v, want %q", thread["subject"], "Discussion")
+	}
+	if _, ok := thread["posts"]; ok {
+		t.Fatalf("discussion_thread.posts = %v, want omitted", thread["posts"])
+	}
+}
+
 func TestTicketsListProjectsSelectedFields(t *testing.T) {
 	t.Parallel()
 
@@ -395,8 +429,8 @@ func TestTicketsCommentsProjectsSelectedFields(t *testing.T) {
 	if comment["id"] != "a1" {
 		t.Fatalf("comment.id = %v, want %q", comment["id"], "a1")
 	}
-	if comment["type"] != "user" {
-		t.Fatalf("comment.type = %v, want %q", comment["type"], "user")
+	if comment["type"] != "human" {
+		t.Fatalf("comment.type = %v, want %q", comment["type"], "human")
 	}
 	if _, ok := comment["body"]; ok {
 		t.Fatalf("comment.body = %v, want omitted", comment["body"])
@@ -432,8 +466,8 @@ func TestTicketsCommentsClassifiesNormalizedCommentTypes(t *testing.T) {
 	}
 
 	comments := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["comments"].([]any)
-	if comments[0].(map[string]any)["type"] != "user" {
-		t.Fatalf("comments[0].type = %v, want %q", comments[0].(map[string]any)["type"], "user")
+	if comments[0].(map[string]any)["type"] != "human" {
+		t.Fatalf("comments[0].type = %v, want %q", comments[0].(map[string]any)["type"], "human")
 	}
 	if comments[0].(map[string]any)["is_meta"] != false {
 		t.Fatalf("comments[0].is_meta = %v, want false", comments[0].(map[string]any)["is_meta"])
@@ -441,8 +475,8 @@ func TestTicketsCommentsClassifiesNormalizedCommentTypes(t *testing.T) {
 	if comments[1].(map[string]any)["type"] != "system" {
 		t.Fatalf("comments[1].type = %v, want %q", comments[1].(map[string]any)["type"], "system")
 	}
-	if comments[2].(map[string]any)["type"] != "unknown" {
-		t.Fatalf("comments[2].type = %v, want %q", comments[2].(map[string]any)["type"], "unknown")
+	if comments[2].(map[string]any)["type"] != "human" {
+		t.Fatalf("comments[2].type = %v, want %q", comments[2].(map[string]any)["type"], "human")
 	}
 }
 
@@ -842,8 +876,8 @@ func TestTicketsCommentsFetchesTicketThenThread(t *testing.T) {
 	if comment["created_at"] != "2026-04-24T00:00:00Z" {
 		t.Fatalf("comment.created_at = %v, want timestamp", comment["created_at"])
 	}
-	if comment["type"] != "user" {
-		t.Fatalf("comment.type = %v, want %q", comment["type"], "user")
+	if comment["type"] != "human" {
+		t.Fatalf("comment.type = %v, want %q", comment["type"], "human")
 	}
 }
 

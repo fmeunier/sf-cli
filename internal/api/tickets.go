@@ -177,6 +177,9 @@ func (c *Client) GetTicket(ctx context.Context, params GetTicketParams) (TicketD
 	if err := c.GetJSON(ctx, fmt.Sprintf("%s/%d", trackerPath(params.Project, params.Tracker), params.TicketID), nil, &out); err != nil {
 		return TicketDetailResponse{}, err
 	}
+	// Keep ticket detail focused on ticket metadata. Comments are exposed via
+	// the dedicated tickets.comments command instead of embedded raw posts.
+	out.Ticket.DiscussionThread.Posts = nil
 	return out, nil
 }
 
@@ -245,10 +248,7 @@ func classifyCommentType(post RawDiscussionPost) string {
 	if post.IsMeta {
 		return "system"
 	}
-	if strings.TrimSpace(post.Author) != "" || strings.TrimSpace(post.Text) != "" || strings.TrimSpace(post.Subject) != "" || len(post.Attachments) != 0 {
-		return "user"
-	}
-	return "unknown"
+	return "human"
 }
 
 func normalizePagination(page int, limit int, count int, returned int) Pagination {

@@ -7,11 +7,6 @@ import (
 	"strconv"
 )
 
-type TicketSummary struct {
-	TicketNum int    `json:"ticket_num"`
-	Summary   string `json:"summary"`
-}
-
 type Milestone struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -23,7 +18,7 @@ type Milestone struct {
 }
 
 type TicketListResponse struct {
-	Tickets    []TicketSummary `json:"tickets"`
+	Tickets    []Ticket        `json:"tickets"`
 	Count      int             `json:"count"`
 	Page       int             `json:"page"`
 	Limit      int             `json:"limit"`
@@ -31,7 +26,7 @@ type TicketListResponse struct {
 }
 
 type TicketSearchResponse struct {
-	Tickets       []TicketSummary `json:"tickets"`
+	Tickets       []Ticket        `json:"tickets"`
 	Count         int             `json:"count"`
 	Page          int             `json:"page"`
 	Limit         int             `json:"limit"`

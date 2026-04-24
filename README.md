@@ -118,6 +118,8 @@ Failures return the same envelope shape with `ok: false`, `result: null`, and an
 
 Warnings are reported at the top-level `warnings` field so callers do not need to inspect command-specific payloads for partial-success metadata.
 
+For ticket reads, overlapping ticket fields use the same names and shapes across `tickets list`, `tickets search`, and `tickets get`. Collection responses return those ticket objects in `result.tickets`, while detail responses return one ticket object in `result.ticket`.
+
 ## Scope And Limits
 
 Current scope:

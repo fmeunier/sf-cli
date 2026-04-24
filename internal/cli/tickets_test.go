@@ -18,7 +18,7 @@ func TestTicketsListExecutesAPIRequest(t *testing.T) {
 			t.Fatalf("limit = %q, want %q", got, "10")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"First"}],"count":1,"page":0,"limit":10,"milestones":[{"name":"m1","description":"","due_date":"","default":false,"complete":false,"closed":0,"total":1}]}`))
+		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"First","status":"open","assigned_to":"alice","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z"}],"count":1,"page":0,"limit":10,"milestones":[{"name":"m1","description":"","due_date":"","default":false,"complete":false,"closed":0,"total":1}]}`))
 	}))
 	defer server.Close()
 
@@ -50,6 +50,14 @@ func TestTicketsListExecutesAPIRequest(t *testing.T) {
 	if got.Proposal == nil || got.Proposal.Action != "list_tickets" {
 		t.Fatalf("proposal = %#v, want action %q", got.Proposal, "list_tickets")
 	}
+	tickets := result["tickets"].([]any)
+	firstTicket := tickets[0].(map[string]any)
+	if firstTicket["status"] != "open" {
+		t.Fatalf("ticket.status = %v, want %q", firstTicket["status"], "open")
+	}
+	if firstTicket["assigned_to"] != "alice" {
+		t.Fatalf("ticket.assigned_to = %v, want %q", firstTicket["assigned_to"], "alice")
+	}
 	inputs := got.Proposal.Inputs
 	if inputs["limit"] != float64(10) {
 		t.Fatalf("proposal.inputs.limit = %v, want 10", inputs["limit"])
@@ -67,7 +75,7 @@ func TestTicketsSearchExecutesAPIRequest(t *testing.T) {
 			t.Fatalf("q = %q, want %q", got, "status:open")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":2,"summary":"Second"}],"count":1,"page":0,"limit":25,"sort":"ticket_num_i desc","filter_choices":{"status":["open","closed"]}}`))
+		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":2,"summary":"Second","status":"open","assigned_to":"alice","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z"}],"count":1,"page":0,"limit":25,"sort":"ticket_num_i desc","filter_choices":{"status":["open","closed"]}}`))
 	}))
 	defer server.Close()
 
@@ -92,6 +100,14 @@ func TestTicketsSearchExecutesAPIRequest(t *testing.T) {
 	result := got.Result.(map[string]any)
 	if result["sort"] != "ticket_num_i desc" {
 		t.Fatalf("result.sort = %v, want %q", result["sort"], "ticket_num_i desc")
+	}
+	tickets := result["tickets"].([]any)
+	firstTicket := tickets[0].(map[string]any)
+	if firstTicket["status"] != "open" {
+		t.Fatalf("ticket.status = %v, want %q", firstTicket["status"], "open")
+	}
+	if firstTicket["assigned_to"] != "alice" {
+		t.Fatalf("ticket.assigned_to = %v, want %q", firstTicket["assigned_to"], "alice")
 	}
 }
 
@@ -179,6 +195,62 @@ func TestTicketsGetExecutesAPIRequest(t *testing.T) {
 	ticket := result["ticket"].(map[string]any)
 	if ticket["summary"] != "Answer" {
 		t.Fatalf("ticket.summary = %v, want %q", ticket["summary"], "Answer")
+	}
+}
+
+func TestTicketOutputsShareCommonOverlappingFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/rest/p/test/tickets":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z","mod_date":"2026-04-24T01:00:00Z"}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/search":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z","mod_date":"2026-04-24T01:00:00Z"}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","description":"Detailed ticket","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42","subject":""},"created_date":"2026-04-24T00:00:00Z","mod_date":"2026-04-24T01:00:00Z"}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	listOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets"}, listOut); status != 0 {
+		t.Fatalf("tickets list status = %d, want 0; output=%s", status, listOut.String())
+	}
+	searchOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open"}, searchOut); status != 0 {
+		t.Fatalf("tickets search status = %d, want 0; output=%s", status, searchOut.String())
+	}
+	getOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "get", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, getOut); status != 0 {
+		t.Fatalf("tickets get status = %d, want 0; output=%s", status, getOut.String())
+	}
+
+	listTicket := decodeEnvelope(t, listOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+	searchTicket := decodeEnvelope(t, searchOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+	getTicket := decodeEnvelope(t, getOut.Bytes()).Result.(map[string]any)["ticket"].(map[string]any)
+
+	for _, field := range []string{"ticket_num", "summary", "status", "reported_by", "assigned_to", "created_date", "mod_date"} {
+		if listTicket[field] != getTicket[field] {
+			t.Fatalf("list %s = %v, want %v", field, listTicket[field], getTicket[field])
+		}
+		if searchTicket[field] != getTicket[field] {
+			t.Fatalf("search %s = %v, want %v", field, searchTicket[field], getTicket[field])
+		}
+	}
+
+	listLabels := listTicket["labels"].([]any)
+	searchLabels := searchTicket["labels"].([]any)
+	getLabels := getTicket["labels"].([]any)
+	if len(listLabels) != 1 || listLabels[0] != getLabels[0] {
+		t.Fatalf("list labels = %v, want %v", listLabels, getLabels)
+	}
+	if len(searchLabels) != 1 || searchLabels[0] != getLabels[0] {
+		t.Fatalf("search labels = %v, want %v", searchLabels, getLabels)
 	}
 }
 

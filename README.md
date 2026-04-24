@@ -138,7 +138,9 @@ Failures return the same envelope shape with `ok: false`, `result: null`, and an
 
 Warnings are reported at the top-level `warnings` field so callers do not need to inspect command-specific payloads for partial-success metadata.
 
-For ticket reads, overlapping ticket fields use the same names and shapes across `tickets list`, `tickets search`, and `tickets get`. Collection responses return those ticket objects in `result.tickets`, while detail responses return one ticket object in `result.ticket`.
+For ticket reads, the canonical ticket schema is defined in `internal/cli/ticket_contract.go`. Shared fields keep the same names and meanings across `tickets list`, `tickets search`, and `tickets get`; collection responses return those ticket objects in `result.tickets`, while detail responses return one ticket object in `result.ticket`.
+
+The contract explicitly marks required versus optional fields. Optional fields are omitted when SourceForge does not provide a meaningful value, and ticket payloads do not emit JSON `null` today. Compatible schema changes should be additive, start as optional fields, and update the contract plus its conformance tests before widening command coverage.
 
 `tickets activity` returns tickets ordered by most recent activity, including `updated_at`, `last_comment_at`, and `last_comment_author` when comment metadata is available.
 

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -513,6 +515,160 @@ func TestTicketOutputsShareCommonOverlappingFields(t *testing.T) {
 	if len(searchLabels) != 1 || searchLabels[0] != getLabels[0] {
 		t.Fatalf("search labels = %v, want %v", searchLabels, getLabels)
 	}
+}
+
+func TestTicketOutputsMatchCanonicalSchemaContract(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/rest/p/test/tickets":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z","mod_date":"2026-04-24T01:00:00Z"}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/search":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z","mod_date":"2026-04-24T01:00:00Z"}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","description":"Detailed ticket","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42","subject":"Discussion"},"discussion_thread_url":"https://example.test/thread-42","custom_fields":{"_milestone":"unreleased"},"attachments":[{"name":"trace.txt"}],"related_artifacts":[{"type":"merge_request"}],"created_date":"2026-04-24T00:00:00Z","mod_date":"2026-04-24T01:00:00Z"}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	listOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets"}, listOut); status != 0 {
+		t.Fatalf("tickets list status = %d, want 0; output=%s", status, listOut.String())
+	}
+	searchOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open"}, searchOut); status != 0 {
+		t.Fatalf("tickets search status = %d, want 0; output=%s", status, searchOut.String())
+	}
+	getOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "get", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, getOut); status != 0 {
+		t.Fatalf("tickets get status = %d, want 0; output=%s", status, getOut.String())
+	}
+
+	assertTicketConformsCanonicalContract(t, decodeEnvelope(t, listOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any), canonicalTicketListCommand)
+	assertTicketConformsCanonicalContract(t, decodeEnvelope(t, searchOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any), canonicalTicketSearchCommand)
+	assertTicketConformsCanonicalContract(t, decodeEnvelope(t, getOut.Bytes()).Result.(map[string]any)["ticket"].(map[string]any), canonicalTicketGetCommand)
+
+	getTicket := decodeEnvelope(t, getOut.Bytes()).Result.(map[string]any)["ticket"].(map[string]any)
+	for _, field := range canonicalTicketFieldNames(canonicalTicketGetCommand) {
+		if getTicket[field] == nil {
+			t.Fatalf("ticket.%s = nil, want non-null canonical field", field)
+		}
+	}
+}
+
+func TestTicketOutputsOmitEmptyOptionalFieldsPerCanonicalContract(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/rest/p/test/tickets":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open"}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/search":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open"}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","description":"","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42"}}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	listOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets"}, listOut); status != 0 {
+		t.Fatalf("tickets list status = %d, want 0; output=%s", status, listOut.String())
+	}
+	searchOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open"}, searchOut); status != 0 {
+		t.Fatalf("tickets search status = %d, want 0; output=%s", status, searchOut.String())
+	}
+	getOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "get", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, getOut); status != 0 {
+		t.Fatalf("tickets get status = %d, want 0; output=%s", status, getOut.String())
+	}
+
+	assertTicketConformsCanonicalContract(t, decodeEnvelope(t, listOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any), canonicalTicketListCommand)
+	assertTicketConformsCanonicalContract(t, decodeEnvelope(t, searchOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any), canonicalTicketSearchCommand)
+	assertTicketConformsCanonicalContract(t, decodeEnvelope(t, getOut.Bytes()).Result.(map[string]any)["ticket"].(map[string]any), canonicalTicketGetCommand)
+
+	listTicket := decodeEnvelope(t, listOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+	if _, ok := listTicket["description"]; ok {
+		t.Fatalf("tickets list leaked detail-only field description: %v", listTicket["description"])
+	}
+	if _, ok := listTicket["discussion_thread"]; ok {
+		t.Fatalf("tickets list leaked detail-only field discussion_thread: %v", listTicket["discussion_thread"])
+	}
+	getTicket := decodeEnvelope(t, getOut.Bytes()).Result.(map[string]any)["ticket"].(map[string]any)
+	for _, field := range []string{"reported_by", "assigned_to", "labels", "created_date", "mod_date", "discussion_thread_url", "custom_fields", "attachments", "related_artifacts"} {
+		if _, ok := getTicket[field]; ok {
+			t.Fatalf("ticket.%s = %v, want omitted when optional value is empty", field, getTicket[field])
+		}
+	}
+}
+
+func assertTicketMatchesCanonicalContract(t *testing.T, ticket map[string]any, command string) {
+	t.Helper()
+
+	assertTicketConformsCanonicalContract(t, ticket, command)
+
+	gotFields := sortedTicketFields(ticket)
+	wantFields := sortedFieldNames(canonicalTicketFieldNames(command))
+	if !reflect.DeepEqual(gotFields, wantFields) {
+		t.Fatalf("%s fields = %v, want %v", command, gotFields, wantFields)
+	}
+
+}
+
+func assertTicketConformsCanonicalContract(t *testing.T, ticket map[string]any, command string) {
+	t.Helper()
+
+	allowedFields := make(map[string]ticketSchemaField, len(canonicalTicketSchema))
+	for _, field := range canonicalTicketSchema {
+		if field.supports(command) {
+			allowedFields[field.name] = field
+		}
+	}
+
+	for field := range ticket {
+		if _, ok := allowedFields[field]; !ok {
+			t.Fatalf("%s emitted unexpected field %q", command, field)
+		}
+	}
+
+	for _, field := range canonicalTicketSchema {
+		if !field.supports(command) || field.nullable {
+			continue
+		}
+		if field.required {
+			if _, ok := ticket[field.name]; !ok {
+				t.Fatalf("%s missing required field %q", command, field.name)
+			}
+		}
+		if value, ok := ticket[field.name]; ok && value == nil {
+			t.Fatalf("%s field %q = null, want non-null field", command, field.name)
+		}
+	}
+}
+
+func sortedTicketFields(ticket map[string]any) []string {
+	fields := make([]string, 0, len(ticket))
+	for field := range ticket {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	return fields
+}
+
+func sortedFieldNames(fields []string) []string {
+	cloned := append([]string(nil), fields...)
+	sort.Strings(cloned)
+	return cloned
 }
 
 func TestTicketsCommentsFetchesTicketThenThread(t *testing.T) {

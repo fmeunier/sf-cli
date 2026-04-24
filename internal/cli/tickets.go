@@ -105,7 +105,7 @@ func runTicketsList(ctx context.Context, client *api.Client, args []string) mode
 		return successEnvelope(command, prop, projectTicketListResult(result, config.Fields))
 	}
 
-	return successEnvelope(command, prop, result)
+	return successEnvelope(command, prop, projectCanonicalTicketListResult(result))
 }
 
 func runTicketsSearch(ctx context.Context, client *api.Client, args []string) model.Envelope {
@@ -130,7 +130,7 @@ func runTicketsSearch(ctx context.Context, client *api.Client, args []string) mo
 		return successEnvelope(command, prop, projectTicketSearchResult(result, config.Fields))
 	}
 
-	return successEnvelope(command, prop, result)
+	return successEnvelope(command, prop, projectCanonicalTicketSearchResult(result))
 }
 
 func runTicketsGet(ctx context.Context, client *api.Client, args []string) model.Envelope {
@@ -149,7 +149,7 @@ func runTicketsGet(ctx context.Context, client *api.Client, args []string) model
 		return successEnvelope(command, prop, map[string]any{"ticket": projectTicket(result.Ticket, config.Fields)})
 	}
 
-	return successEnvelope(command, prop, result)
+	return successEnvelope(command, prop, projectCanonicalTicketDetailResult(result))
 }
 
 func runTicketsComments(ctx context.Context, client *api.Client, args []string) model.Envelope {
@@ -445,6 +445,24 @@ func projectTicketListResult(result api.TicketListResponse, fields []string) map
 	return projected
 }
 
+func projectCanonicalTicketListResult(result api.TicketListResponse) map[string]any {
+	projectedTickets := make([]map[string]any, 0, len(result.Tickets))
+	for _, ticket := range result.Tickets {
+		projectedTickets = append(projectedTickets, projectCanonicalTicket(ticket, canonicalTicketListCommand))
+	}
+
+	projected := map[string]any{
+		"tickets":    projectedTickets,
+		"count":      result.Count,
+		"limit":      result.Limit,
+		"pagination": result.Pagination,
+	}
+	if len(result.Milestones) != 0 {
+		projected["milestones"] = result.Milestones
+	}
+	return projected
+}
+
 func projectTicketSearchResult(result api.TicketSearchResponse, fields []string) map[string]any {
 	projectedTickets := make([]map[string]any, 0, len(result.Tickets))
 	for _, ticket := range result.Tickets {
@@ -464,6 +482,31 @@ func projectTicketSearchResult(result api.TicketSearchResponse, fields []string)
 		projected["filter_choices"] = result.FilterChoices
 	}
 	return projected
+}
+
+func projectCanonicalTicketSearchResult(result api.TicketSearchResponse) map[string]any {
+	projectedTickets := make([]map[string]any, 0, len(result.Tickets))
+	for _, ticket := range result.Tickets {
+		projectedTickets = append(projectedTickets, projectCanonicalTicket(ticket, canonicalTicketSearchCommand))
+	}
+
+	projected := map[string]any{
+		"tickets":    projectedTickets,
+		"count":      result.Count,
+		"limit":      result.Limit,
+		"pagination": result.Pagination,
+	}
+	if result.Sort != "" {
+		projected["sort"] = result.Sort
+	}
+	if len(result.FilterChoices) != 0 {
+		projected["filter_choices"] = result.FilterChoices
+	}
+	return projected
+}
+
+func projectCanonicalTicketDetailResult(result api.TicketDetailResponse) map[string]any {
+	return map[string]any{"ticket": projectCanonicalTicket(result.Ticket, canonicalTicketGetCommand)}
 }
 
 func projectComment(comment api.Comment, fields []string) map[string]any {

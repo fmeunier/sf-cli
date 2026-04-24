@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,30 +28,29 @@ func TestTicketsListExecutesAPIRequest(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	got := decodeEnvelope(t, stdout.Bytes())
+
+	if got.Command != "tickets.list" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.list")
+	}
+	if !got.OK {
+		t.Fatalf("ok = %v, want true", got.OK)
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 
-	if got["command"] != "tickets.list" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets.list")
-	}
-	if got["ok"] != true {
-		t.Fatalf("ok = %v, want true", got["ok"])
-	}
-
-	result := got["result"].(map[string]any)
+	result := got.Result.(map[string]any)
 	if result["count"] != float64(1) {
 		t.Fatalf("result.count = %v, want 1", result["count"])
 	}
 	if result["limit"] != float64(10) {
 		t.Fatalf("result.limit = %v, want 10", result["limit"])
 	}
-	proposal := got["proposal"].(map[string]any)
-	if proposal["action"] != "list_tickets" {
-		t.Fatalf("proposal.action = %v, want %q", proposal["action"], "list_tickets")
+	if got.Proposal == nil || got.Proposal.Action != "list_tickets" {
+		t.Fatalf("proposal = %#v, want action %q", got.Proposal, "list_tickets")
 	}
-	inputs := proposal["inputs"].(map[string]any)
+	inputs := got.Proposal.Inputs
 	if inputs["limit"] != float64(10) {
 		t.Fatalf("proposal.inputs.limit = %v, want 10", inputs["limit"])
 	}
@@ -79,20 +77,19 @@ func TestTicketsSearchExecutesAPIRequest(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
+	got := decodeEnvelope(t, stdout.Bytes())
 
-	if got["command"] != "tickets.search" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets.search")
+	if got.Command != "tickets.search" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.search")
 	}
-	proposal := got["proposal"].(map[string]any)
-	inputs := proposal["inputs"].(map[string]any)
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
+	}
+	inputs := got.Proposal.Inputs
 	if inputs["query"] != "status:open" {
 		t.Fatalf("proposal.inputs.query = %v, want %q", inputs["query"], "status:open")
 	}
-	result := got["result"].(map[string]any)
+	result := got.Result.(map[string]any)
 	if result["sort"] != "ticket_num_i desc" {
 		t.Fatalf("result.sort = %v, want %q", result["sort"], "ticket_num_i desc")
 	}
@@ -107,16 +104,15 @@ func TestTicketsListRequiresProjectAndTracker(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 1", status)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Command != "tickets.list" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.list")
 	}
-	if got["command"] != "tickets.list" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets.list")
+	if got.Error == nil || got.Error.Code != "invalid_arguments" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "invalid_arguments")
 	}
-	errorValue := got["error"].(map[string]any)
-	if errorValue["code"] != "invalid_arguments" {
-		t.Fatalf("error.code = %v, want %q", errorValue["code"], "invalid_arguments")
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 }
 
@@ -129,26 +125,24 @@ func TestTicketsListRejectsQueryFlagWithGuidance(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 1", status)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
+	got := decodeEnvelope(t, stdout.Bytes())
 
-	if got["command"] != "tickets.list" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets.list")
+	if got.Command != "tickets.list" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.list")
 	}
-	proposal := got["proposal"].(map[string]any)
-	target := proposal["target"].(map[string]any)
+	target := got.Proposal.Target
 	if target["project"] != "" {
 		t.Fatalf("proposal.target.project = %v, want empty string", target["project"])
 	}
-	errorValue := got["error"].(map[string]any)
-	message := errorValue["message"].(string)
+	message := got.Error.Message
 	if !bytes.Contains([]byte(message), []byte("tickets search")) {
 		t.Fatalf("error.message = %q, want guidance mentioning tickets search", message)
 	}
-	if errorValue["code"] != "invalid_arguments" {
-		t.Fatalf("error.code = %v, want %q", errorValue["code"], "invalid_arguments")
+	if got.Error == nil || got.Error.Code != "invalid_arguments" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "invalid_arguments")
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 }
 
@@ -170,19 +164,18 @@ func TestTicketsGetExecutesAPIRequest(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Command != "tickets.get" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.get")
 	}
-	if got["command"] != "tickets.get" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets.get")
-	}
-	proposal := got["proposal"].(map[string]any)
-	target := proposal["target"].(map[string]any)
+	target := got.Proposal.Target
 	if target["ticket"] != float64(42) {
 		t.Fatalf("proposal.target.ticket = %v, want 42", target["ticket"])
 	}
-	result := got["result"].(map[string]any)
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
+	}
+	result := got.Result.(map[string]any)
 	ticket := result["ticket"].(map[string]any)
 	if ticket["summary"] != "Answer" {
 		t.Fatalf("ticket.summary = %v, want %q", ticket["summary"], "Answer")
@@ -216,14 +209,14 @@ func TestTicketsCommentsFetchesTicketThenThread(t *testing.T) {
 		t.Fatalf("requestCount = %d, want 2", requestCount)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Command != "tickets.comments" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.comments")
 	}
-	if got["command"] != "tickets.comments" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets.comments")
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
-	result := got["result"].(map[string]any)
+	result := got.Result.(map[string]any)
 	thread := result["thread"].(map[string]any)
 	posts := thread["posts"].([]any)
 	if len(posts) != 1 {
@@ -251,19 +244,18 @@ func TestTicketsCommentsReturnsAPINotFound(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 1", status)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Command != "tickets.comments" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets.comments")
 	}
-	if got["command"] != "tickets.comments" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets.comments")
+	if got.Error == nil || got.Error.Code != "api_error" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "api_error")
 	}
-	errorValue := got["error"].(map[string]any)
-	if errorValue["code"] != "api_error" {
-		t.Fatalf("error.code = %v, want %q", errorValue["code"], "api_error")
-	}
-	message := errorValue["message"].(string)
+	message := got.Error.Message
 	if !bytes.Contains([]byte(message), []byte("ticket not found")) {
 		t.Fatalf("error.message = %q, want to mention ticket not found", message)
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 }

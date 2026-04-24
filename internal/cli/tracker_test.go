@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -36,23 +35,22 @@ func TestTrackerSchemaReturnsBestEffortMetadata(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	got := decodeEnvelope(t, stdout.Bytes())
+
+	if got.Command != "tracker.schema" {
+		t.Fatalf("command = %q, want %q", got.Command, "tracker.schema")
+	}
+	if !got.OK {
+		t.Fatalf("ok = %v, want true", got.OK)
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 
-	if got["command"] != "tracker.schema" {
-		t.Fatalf("command = %v, want %q", got["command"], "tracker.schema")
+	if got.Proposal == nil || got.Proposal.Action != "get_tracker_schema" {
+		t.Fatalf("proposal = %#v, want action %q", got.Proposal, "get_tracker_schema")
 	}
-	if got["ok"] != true {
-		t.Fatalf("ok = %v, want true", got["ok"])
-	}
-
-	proposal := got["proposal"].(map[string]any)
-	if proposal["action"] != "get_tracker_schema" {
-		t.Fatalf("proposal.action = %v, want %q", proposal["action"], "get_tracker_schema")
-	}
-	result := got["result"].(map[string]any)
+	result := got.Result.(map[string]any)
 	options := result["options"].(map[string]any)
 	if options["mount_label"] != "Bugs" {
 		t.Fatalf("result.options.mount_label = %v, want %q", options["mount_label"], "Bugs")
@@ -82,8 +80,8 @@ func TestTrackerSchemaReturnsBestEffortMetadata(t *testing.T) {
 	if _, ok := result["warnings"]; ok {
 		t.Fatalf("result.warnings present, want omitted")
 	}
-	if _, ok := got["error"]; ok && got["error"] != nil {
-		t.Fatalf("error = %v, want nil", got["error"])
+	if got.Error != nil {
+		t.Fatalf("error = %v, want nil", got.Error)
 	}
 	if len(result["saved_bins"].([]any)) != 1 {
 		t.Fatalf("len(result.saved_bins) = %d, want 1", len(result["saved_bins"].([]any)))
@@ -118,21 +116,20 @@ func TestTrackerSchemaSucceedsWhenSearchMetadataIsUnavailable(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
+	got := decodeEnvelope(t, stdout.Bytes())
 
-	result := got["result"].(map[string]any)
-	warnings := result["warnings"].([]any)
-	if len(warnings) != 1 {
-		t.Fatalf("len(result.warnings) = %d, want 1", len(warnings))
+	result := got.Result.(map[string]any)
+	if len(got.Warnings) != 1 {
+		t.Fatalf("len(warnings) = %d, want 1", len(got.Warnings))
 	}
 	if result["options"].(map[string]any)["mount_label"] != "Bugs" {
 		t.Fatalf("result.options.mount_label = %v, want %q", result["options"].(map[string]any)["mount_label"], "Bugs")
 	}
-	if got["ok"] != true {
-		t.Fatalf("ok = %v, want true", got["ok"])
+	if !got.OK {
+		t.Fatalf("ok = %v, want true", got.OK)
+	}
+	if _, ok := result["warnings"]; ok {
+		t.Fatalf("result.warnings present, want omitted")
 	}
 }
 
@@ -158,12 +155,9 @@ func TestTrackerSchemaSkipsMalformedFilterChoices(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
+	got := decodeEnvelope(t, stdout.Bytes())
 
-	result := got["result"].(map[string]any)
+	result := got.Result.(map[string]any)
 	fields := result["fields"].([]any)
 	if len(fields) != 2 {
 		t.Fatalf("len(result.fields) = %d, want 2", len(fields))
@@ -198,16 +192,15 @@ func TestTrackerSchemaRequiresProjectAndTracker(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 1", status)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
+	got := decodeEnvelope(t, stdout.Bytes())
 
-	if got["command"] != "tracker.schema" {
-		t.Fatalf("command = %v, want %q", got["command"], "tracker.schema")
+	if got.Command != "tracker.schema" {
+		t.Fatalf("command = %q, want %q", got.Command, "tracker.schema")
 	}
-	errorValue := got["error"].(map[string]any)
-	if errorValue["code"] != "invalid_arguments" {
-		t.Fatalf("error.code = %v, want %q", errorValue["code"], "invalid_arguments")
+	if got.Error == nil || got.Error.Code != "invalid_arguments" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "invalid_arguments")
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 }

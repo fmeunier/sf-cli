@@ -15,6 +15,7 @@ func TestWriteJSONFormatsIndentedEnvelope(t *testing.T) {
 		Mode:    "read_only",
 		Command: "tickets.list",
 		OK:      true,
+		Warnings: []string{},
 		Proposal: &model.Proposal{
 			Action:  "list_tickets",
 			Effects: []model.Effect{},
@@ -32,6 +33,7 @@ func TestWriteJSONFormatsIndentedEnvelope(t *testing.T) {
 		"  \"mode\": \"read_only\",\n" +
 		"  \"command\": \"tickets.list\",\n" +
 		"  \"ok\": true,\n" +
+		"  \"warnings\": [],\n" +
 		"  \"proposal\": {\n" +
 		"    \"action\": \"list_tickets\",\n" +
 		"    \"effects\": []\n" +

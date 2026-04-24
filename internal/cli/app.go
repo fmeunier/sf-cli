@@ -29,7 +29,7 @@ func Run(args []string, stdout io.Writer) int {
 
 	envelope := execute(args)
 	if err := output.WriteJSON(stdout, envelope); err != nil {
-		fallback := fmt.Sprintf("{\n  \"version\": \"v1\",\n  \"mode\": \"read_only\",\n  \"command\": %q,\n  \"ok\": false,\n  \"result\": null,\n  \"error\": {\n    \"code\": \"output_error\",\n    \"message\": %q\n  }\n}\n", envelope.Command, err.Error())
+		fallback := fmt.Sprintf("{\n  \"version\": \"v1\",\n  \"mode\": \"read_only\",\n  \"command\": %q,\n  \"ok\": false,\n  \"warnings\": [],\n  \"proposal\": null,\n  \"result\": null,\n  \"error\": {\n    \"code\": \"output_error\",\n    \"message\": %q\n  }\n}\n", envelope.Command, err.Error())
 		_, _ = io.WriteString(stdout, fallback)
 		return 1
 	}
@@ -148,6 +148,7 @@ func errorEnvelope(command string, proposal *model.Proposal, code string, messag
 		Mode:     "read_only",
 		Command:  command,
 		OK:       false,
+		Warnings: []string{},
 		Proposal: proposal,
 		Result:   nil,
 		Error: &model.Error{
@@ -157,12 +158,13 @@ func errorEnvelope(command string, proposal *model.Proposal, code string, messag
 	}
 }
 
-func successEnvelope(command string, proposal *model.Proposal, result any) model.Envelope {
+func successEnvelope(command string, proposal *model.Proposal, result any, warnings ...string) model.Envelope {
 	return model.Envelope{
 		Version:  "v1",
 		Mode:     "read_only",
 		Command:  command,
 		OK:       true,
+		Warnings: append([]string{}, warnings...),
 		Proposal: proposal,
 		Result:   result,
 		Error:    nil,

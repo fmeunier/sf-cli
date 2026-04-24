@@ -28,7 +28,10 @@ func runTrackerSchema(ctx context.Context, client *api.Client, args []string) mo
 		return apiErrorEnvelope(command, prop, err)
 	}
 
-	return successEnvelope(command, prop, result)
+	warnings := append([]string{}, result.Warnings...)
+	result.Warnings = nil
+
+	return successEnvelope(command, prop, result, warnings...)
 }
 
 func parseTrackerSchemaFlags(args []string) (trackerSchemaConfig, error) {

@@ -109,10 +109,14 @@ Successful calls return fields like:
 - `mode`
 - `command`
 - `ok`
+- `warnings`
 - `proposal`
 - `result`
+- `error`
 
-Failures return the same envelope shape with `ok: false` and an `error` object.
+Failures return the same envelope shape with `ok: false`, `result: null`, and an `error` object containing stable `code` and `message` fields.
+
+Warnings are reported at the top-level `warnings` field so callers do not need to inspect command-specific payloads for partial-success metadata.
 
 ## Scope And Limits
 

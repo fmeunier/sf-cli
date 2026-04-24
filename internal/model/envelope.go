@@ -5,6 +5,7 @@ type Envelope struct {
 	Mode     string    `json:"mode"`
 	Command  string    `json:"command"`
 	OK       bool      `json:"ok"`
+	Warnings []string  `json:"warnings"`
 	Proposal *Proposal `json:"proposal,omitempty"`
 	Result   any       `json:"result"`
 	Error    *Error    `json:"error"`

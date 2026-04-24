@@ -2,10 +2,23 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"sf-cli/internal/model"
 )
+
+func decodeEnvelope(t *testing.T, data []byte) model.Envelope {
+	t.Helper()
+
+	var got model.Envelope
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	return got
+}
 
 func TestResolveTokenPrefersFlag(t *testing.T) {
 	t.Parallel()

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"testing"
 )
 
@@ -54,11 +53,8 @@ func TestRunMissingCommandIncludesUsageGuidance(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 1", status)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-	message := got["error"].(map[string]any)["message"].(string)
+	got := decodeEnvelope(t, stdout.Bytes())
+	message := got.Error.Message
 	if !bytes.Contains([]byte(message), []byte("Usage:")) {
 		t.Fatalf("error.message = %q, want usage guidance", message)
 	}
@@ -76,15 +72,15 @@ func TestRunMissingTicketsSubcommandIncludesUsageGuidance(t *testing.T) {
 		t.Fatalf("Run() status = %d, want 1", status)
 	}
 
-	var got map[string]any
-	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-	message := got["error"].(map[string]any)["message"].(string)
+	got := decodeEnvelope(t, stdout.Bytes())
+	message := got.Error.Message
 	if !bytes.Contains([]byte(message), []byte("sf tickets <subcommand>")) {
 		t.Fatalf("error.message = %q, want tickets usage", message)
 	}
-	if got["command"] != "tickets" {
-		t.Fatalf("command = %v, want %q", got["command"], "tickets")
+	if got.Command != "tickets" {
+		t.Fatalf("command = %q, want %q", got.Command, "tickets")
+	}
+	if len(got.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 }

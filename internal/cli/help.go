@@ -116,15 +116,15 @@ func ticketsUsage() string {
 }
 
 func ticketsListUsage(command string) string {
-	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n"
+	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N] [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned item\n"
 }
 
 func ticketsSearchUsage() string {
-	return "Usage:\n  sf tickets search --project PROJECT --tracker TRACKER --query QUERY [--cursor TOKEN] [--limit N]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --query QUERY      Ticket search query\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n"
+	return "Usage:\n  sf tickets search --project PROJECT --tracker TRACKER --query QUERY [--cursor TOKEN] [--limit N] [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --query QUERY      Ticket search query\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned ticket\n"
 }
 
 func ticketsGetUsage(command string) string {
-	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER --ticket NUMBER\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --ticket NUMBER    Ticket number\n"
+	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER --ticket NUMBER [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --ticket NUMBER    Ticket number\n  --fields LIST      Comma-separated compact fields for the returned item\n"
 }
 
 func projectUsage() string {
@@ -132,7 +132,7 @@ func projectUsage() string {
 }
 
 func projectToolsUsage() string {
-	return "Usage:\n  sf project tools --project PROJECT\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n"
+	return "Usage:\n  sf project tools --project PROJECT [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --fields LIST      Comma-separated compact fields for each returned tool\n"
 }
 
 func trackerUsage() string {
@@ -140,5 +140,5 @@ func trackerUsage() string {
 }
 
 func trackerSchemaUsage() string {
-	return "Usage:\n  sf tracker schema --project PROJECT --tracker TRACKER\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n"
+	return "Usage:\n  sf tracker schema --project PROJECT --tracker TRACKER [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --fields LIST      Comma-separated top-level schema sections to return\n"
 }

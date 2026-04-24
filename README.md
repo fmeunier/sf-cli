@@ -90,6 +90,12 @@ Get one ticket:
 sf tickets get --project fuse-emulator --tracker bugs --ticket 42
 ```
 
+Get a compact ticket payload:
+
+```bash
+sf tickets get --project fuse-emulator --tracker bugs --ticket 42 --fields id,title,status,updated_at
+```
+
 Get ticket comments:
 
 ```bash
@@ -137,6 +143,8 @@ For ticket reads, overlapping ticket fields use the same names and shapes across
 `tickets activity` returns tickets ordered by most recent activity, including `updated_at`, `last_comment_at`, and `last_comment_author` when comment metadata is available.
 
 `tickets comments` returns normalized comment data in `result.comments`, ordered by `created_at` ascending and then `id` ascending when timestamps are equal or missing. Each comment uses the same shape: `id`, `author`, `body`, `created_at`, `edited_at`, `subject`, `is_meta`, and `attachments`. Minimal thread metadata remains in `result.thread`.
+
+Most read/query commands also accept `--fields` to return a compact projection instead of the full repeated payload. For ticket-oriented commands, compact field names use the shorter aliases `id`, `title`, `created_at`, and `updated_at`.
 
 Paginated collection commands expose cursor-based `result.pagination` with `limit`, `count`, `next_cursor`, and `has_more`. Request the next page with `--cursor` using the opaque token returned by a previous response. Unpaginated collection commands omit `result.pagination` entirely.
 

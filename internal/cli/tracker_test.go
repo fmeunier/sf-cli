@@ -224,3 +224,64 @@ func TestTrackerSchemaRequiresProjectAndTracker(t *testing.T) {
 		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 }
+
+func TestTrackerSchemaProjectsSelectedFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/bugs":
+			_, _ = w.Write([]byte(`{"milestones":[{"name":"v1","description":"first","due_date":"","default":"on","complete":false,"closed":1,"total":2}],"tracker_config":{"options":{"mount_label":"Bugs"}},"saved_bins":[{"_id":"bin-1","summary":"Open","terms":"status:open","sort":"ticket_num_i desc"}]}`))
+		case "/rest/p/test/bugs/search":
+			_, _ = w.Write([]byte(`{"filter_choices":{"status":[["open",4]]}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tracker", "schema", "--project", "test", "--tracker", "bugs", "--fields", "project,fields"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	result := got.Result.(map[string]any)
+	if len(result) != 2 {
+		t.Fatalf("len(result) = %d, want 2", len(result))
+	}
+	if result["project"] != "test" {
+		t.Fatalf("result.project = %v, want %q", result["project"], "test")
+	}
+	fields := result["fields"].([]any)
+	if len(fields) != 1 {
+		t.Fatalf("len(result.fields) = %d, want 1", len(fields))
+	}
+	if _, ok := result["options"]; ok {
+		t.Fatalf("result.options = %v, want omitted", result["options"])
+	}
+	proposalFields := got.Proposal.Inputs["fields"].([]any)
+	if len(proposalFields) != 2 {
+		t.Fatalf("len(proposal.inputs.fields) = %d, want 2", len(proposalFields))
+	}
+}
+
+func TestTrackerSchemaRejectsUnknownProjectedField(t *testing.T) {
+	t.Parallel()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"tracker", "schema", "--project", "test", "--tracker", "bugs", "--fields", "project,nope"}, stdout)
+	if status != 1 {
+		t.Fatalf("Run() status = %d, want 1", status)
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Error == nil || got.Error.Code != "invalid_arguments" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "invalid_arguments")
+	}
+	if !bytes.Contains([]byte(got.Error.Message), []byte(`unsupported --fields value "nope"`)) {
+		t.Fatalf("error.message = %q, want unsupported field guidance", got.Error.Message)
+	}
+}

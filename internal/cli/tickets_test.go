@@ -283,6 +283,182 @@ func TestTicketsGetExecutesAPIRequest(t *testing.T) {
 	}
 }
 
+func TestTicketsListProjectsSelectedFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("limit"); got != "10" {
+			t.Fatalf("limit = %q, want %q", got, "10")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"First","status":"open","assigned_to":"alice","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z","mod_date":"2026-04-24T01:00:00Z"}],"count":1,"page":0,"limit":10}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets", "--limit", "10", "--fields", "id,title,updated_at"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	result := got.Result.(map[string]any)
+	ticket := result["tickets"].([]any)[0].(map[string]any)
+	if len(ticket) != 3 {
+		t.Fatalf("len(ticket) = %d, want 3", len(ticket))
+	}
+	if ticket["id"] != float64(1) {
+		t.Fatalf("ticket.id = %v, want 1", ticket["id"])
+	}
+	if ticket["title"] != "First" {
+		t.Fatalf("ticket.title = %v, want %q", ticket["title"], "First")
+	}
+	if ticket["updated_at"] != "2026-04-24T01:00:00Z" {
+		t.Fatalf("ticket.updated_at = %v, want timestamp", ticket["updated_at"])
+	}
+	if _, ok := ticket["status"]; ok {
+		t.Fatalf("ticket.status = %v, want omitted", ticket["status"])
+	}
+	inputs := got.Proposal.Inputs
+	fields := inputs["fields"].([]any)
+	if len(fields) != 3 {
+		t.Fatalf("len(proposal.inputs.fields) = %d, want 3", len(fields))
+	}
+}
+
+func TestTicketsGetProjectsSelectedFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","description":"Detailed ticket","status":"open","reported_by":"alice","assigned_to":"bob","labels":["triaged"],"private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42","subject":""},"custom_fields":{"_milestone":"unreleased"},"mod_date":"2026-04-24T01:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "get", "--project", "test", "--tracker", "tickets", "--ticket", "42", "--fields", "id,title,status,updated_at"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
+	ticket := result["ticket"].(map[string]any)
+	if len(ticket) != 4 {
+		t.Fatalf("len(ticket) = %d, want 4", len(ticket))
+	}
+	if ticket["id"] != float64(42) {
+		t.Fatalf("ticket.id = %v, want 42", ticket["id"])
+	}
+	if ticket["title"] != "Answer" {
+		t.Fatalf("ticket.title = %v, want %q", ticket["title"], "Answer")
+	}
+	if ticket["updated_at"] != "2026-04-24T01:00:00Z" {
+		t.Fatalf("ticket.updated_at = %v, want timestamp", ticket["updated_at"])
+	}
+	if _, ok := ticket["description"]; ok {
+		t.Fatalf("ticket.description = %v, want omitted", ticket["description"])
+	}
+}
+
+func TestTicketsCommentsProjectsSelectedFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/tickets/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","discussion_thread":{"_id":"thread-42"}}}`))
+		case "/rest/p/test/tickets/_discuss/thread/thread-42":
+			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-42","subject":"Discussion","posts":[{"author":"alice","text":"first comment","is_meta":false,"timestamp":"2026-04-24T00:00:00Z","slug":"a1"}]}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "comments", "--project", "test", "--tracker", "tickets", "--ticket", "42", "--fields", "id,author,created_at"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
+	comment := result["comments"].([]any)[0].(map[string]any)
+	if len(comment) != 3 {
+		t.Fatalf("len(comment) = %d, want 3", len(comment))
+	}
+	if comment["id"] != "a1" {
+		t.Fatalf("comment.id = %v, want %q", comment["id"], "a1")
+	}
+	if comment["author"] != "alice" {
+		t.Fatalf("comment.author = %v, want %q", comment["author"], "alice")
+	}
+	if _, ok := comment["body"]; ok {
+		t.Fatalf("comment.body = %v, want omitted", comment["body"])
+	}
+	if result["thread"].(map[string]any)["id"] != "thread-42" {
+		t.Fatalf("thread.id = %v, want %q", result["thread"].(map[string]any)["id"], "thread-42")
+	}
+}
+
+func TestTicketsActivityProjectsSelectedFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/tickets":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":2,"summary":"Newer comment","status":"open","mod_date":"2026-04-24T00:30:00Z","discussion_thread":{"_id":"thread-2"}}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/2":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":2,"summary":"Newer comment","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-2"},"mod_date":"2026-04-24T00:30:00Z"}}`))
+		case "/rest/p/test/tickets/_discuss/thread/thread-2":
+			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-2","posts":[{"author":"bob","text":"latest comment","is_meta":false,"timestamp":"2026-04-24T02:00:00Z","slug":"b1"}]}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,updated_at,last_comment_author"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
+	ticket := result["tickets"].([]any)[0].(map[string]any)
+	if len(ticket) != 3 {
+		t.Fatalf("len(ticket) = %d, want 3", len(ticket))
+	}
+	if ticket["id"] != float64(2) {
+		t.Fatalf("ticket.id = %v, want 2", ticket["id"])
+	}
+	if ticket["last_comment_author"] != "bob" {
+		t.Fatalf("ticket.last_comment_author = %v, want %q", ticket["last_comment_author"], "bob")
+	}
+	if _, ok := ticket["title"]; ok {
+		t.Fatalf("ticket.title = %v, want omitted", ticket["title"])
+	}
+}
+
+func TestTicketsSearchRejectsUnknownProjectedField(t *testing.T) {
+	t.Parallel()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open", "--fields", "id,nope"}, stdout)
+	if status != 1 {
+		t.Fatalf("Run() status = %d, want 1", status)
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Error == nil || got.Error.Code != "invalid_arguments" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "invalid_arguments")
+	}
+	if !bytes.Contains([]byte(got.Error.Message), []byte(`unsupported --fields value "nope"`)) {
+		t.Fatalf("error.message = %q, want unsupported field guidance", got.Error.Message)
+	}
+}
+
 func TestTicketOutputsShareCommonOverlappingFields(t *testing.T) {
 	t.Parallel()
 

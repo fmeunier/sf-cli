@@ -71,3 +71,56 @@ func TestProjectToolsRequiresProject(t *testing.T) {
 		t.Fatalf("warnings = %v, want empty", got.Warnings)
 	}
 }
+
+func TestProjectToolsProjectsSelectedFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"shortname":"fuse-emulator","name":"Fuse","url":"https://sourceforge.net/p/fuse-emulator/","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs","url":"https://sourceforge.net/p/fuse-emulator/bugs/","api_url":"https://sourceforge.net/rest/p/fuse-emulator/bugs/"}]}`))
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "project", "tools", "--project", "fuse-emulator", "--fields", "mount_point,api_url"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	tool := got.Result.(map[string]any)["tools"].([]any)[0].(map[string]any)
+	if len(tool) != 2 {
+		t.Fatalf("len(tool) = %d, want 2", len(tool))
+	}
+	if tool["mount_point"] != "bugs" {
+		t.Fatalf("tool.mount_point = %v, want %q", tool["mount_point"], "bugs")
+	}
+	if tool["api_url"] != "https://sourceforge.net/rest/p/fuse-emulator/bugs/" {
+		t.Fatalf("tool.api_url = %v, want api URL", tool["api_url"])
+	}
+	if _, ok := tool["mount_label"]; ok {
+		t.Fatalf("tool.mount_label = %v, want omitted", tool["mount_label"])
+	}
+	fields := got.Proposal.Inputs["fields"].([]any)
+	if len(fields) != 2 {
+		t.Fatalf("len(proposal.inputs.fields) = %d, want 2", len(fields))
+	}
+}
+
+func TestProjectToolsRejectsUnknownProjectedField(t *testing.T) {
+	t.Parallel()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"project", "tools", "--project", "fuse-emulator", "--fields", "mount_point,nope"}, stdout)
+	if status != 1 {
+		t.Fatalf("Run() status = %d, want 1", status)
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Error == nil || got.Error.Code != "invalid_arguments" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "invalid_arguments")
+	}
+	if !bytes.Contains([]byte(got.Error.Message), []byte(`unsupported --fields value "nope"`)) {
+		t.Fatalf("error.message = %q, want unsupported field guidance", got.Error.Message)
+	}
+}

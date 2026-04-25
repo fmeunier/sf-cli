@@ -153,6 +153,9 @@ Common workflows:
   Search open tickets:
     sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'
 
+  Review recently active tickets:
+    sf tickets activity --project fuse-emulator --tracker bugs
+
   Inspect one ticket and then read its comments:
     sf tickets get --project fuse-emulator --tracker bugs --ticket 42
     sf tickets comments --project fuse-emulator --tracker bugs --ticket 42

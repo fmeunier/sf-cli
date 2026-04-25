@@ -26,6 +26,8 @@ func TestRootHelpIncludesAgentGuidance(t *testing.T) {
 		"Purpose:",
 		"Output contract:",
 		"Agent guidance:",
+		"Review recently active tickets:",
+		"sf tickets activity --project fuse-emulator --tracker bugs",
 		"Use 'actions validate' before proposing or applying ticket-comment writes.",
 		"Current write-intent support:",
 	} {

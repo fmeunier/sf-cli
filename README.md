@@ -212,6 +212,19 @@ The canonical ticket contract is:
 - `tickets get` keeps `discussion_thread` limited to thread metadata needed to fetch comments later. Embedded discussion posts are omitted; use `tickets comments` for comment bodies and normalized comment types.
 - Ticket payloads do not emit JSON `null` today. Optional fields are omitted when they are empty, and detail-only fields must not appear in `tickets list` or `tickets search`.
 
+The canonical identifier contract is:
+- `ticket_num` is the canonical ticket identifier across `tickets list`, `tickets search`, `tickets get`, and `tickets activity`.
+- When callers request compact ticket projections with `--fields`, the alias `id` is the same logical identifier as `ticket_num`; it is not a separate ID namespace.
+- `tickets comments` is correlated to a ticket by the requested ticket number plus the normalized thread object in `result.thread`. `result.thread.id` is the normalized discussion-thread identifier for that ticket's comments surface.
+- Comment `id` values identify comments within the discussion thread. They are not ticket IDs and must not be joined to `ticket_num`.
+- Provider-specific thread identifiers such as `discussion_thread._id` and `discussion_thread.discussion_id` are secondary identifiers for the discussion surface, not replacements for the canonical ticket identifier.
+
+Cross-surface correlation rules:
+- Join ticket records from `tickets list`, `tickets search`, `tickets get`, and `tickets activity` by `ticket_num`, or by compact `id` after normalizing that alias back to `ticket_num`.
+- Use `tickets get` when a client needs provider thread metadata such as `discussion_thread._id` or `discussion_thread.discussion_id`.
+- Use `tickets comments` when a client needs normalized thread and comment data. `result.thread.id` should match the provider thread `_id` exposed by `tickets get` when both are present for the same ticket.
+- Do not use comment IDs, thread IDs, or provider `discussion_id` values as ticket keys. They identify discussion resources related to a ticket, not the ticket record itself.
+
 Compatible schema changes should be additive, start as optional fields, and update the documentation plus the conformance tests before widening command coverage.
 
 `tickets activity` returns tickets ordered by most recent activity. Each activity entry includes `activity_type` plus `updated_at`, `last_comment_at`, and `last_comment_author` when comment metadata is available.

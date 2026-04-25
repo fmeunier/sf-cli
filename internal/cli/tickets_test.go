@@ -595,6 +595,81 @@ func TestTicketsActivityFallsBackToUnknownWithoutUsableTimestamps(t *testing.T) 
 	}
 }
 
+func TestTicketIdentifiersStayConsistentAcrossSurfaces(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/tickets":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open","mod_date":"2026-04-24T01:00:00Z","discussion_thread":{"_id":"thread-42"}}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/search":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":42,"summary":"Answer","status":"open","mod_date":"2026-04-24T01:00:00Z"}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","description":"Detailed ticket","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42","discussion_id":"discussion-42","subject":"Discussion"},"mod_date":"2026-04-24T01:00:00Z"}}`))
+		case "/rest/p/test/tickets/_discuss/thread/thread-42":
+			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-42","discussion_id":"discussion-42","subject":"Discussion","posts":[{"author":"alice","text":"first comment","is_meta":false,"timestamp":"2026-04-24T00:00:00Z","slug":"a1"}]}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	listOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets", "--fields", "id,title"}, listOut); status != 0 {
+		t.Fatalf("tickets list status = %d, want 0; output=%s", status, listOut.String())
+	}
+	searchOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "search", "--project", "test", "--tracker", "tickets", "--query", "status:open"}, searchOut); status != 0 {
+		t.Fatalf("tickets search status = %d, want 0; output=%s", status, searchOut.String())
+	}
+	getOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "get", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, getOut); status != 0 {
+		t.Fatalf("tickets get status = %d, want 0; output=%s", status, getOut.String())
+	}
+	commentsOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "comments", "--project", "test", "--tracker", "tickets", "--ticket", "42"}, commentsOut); status != 0 {
+		t.Fatalf("tickets comments status = %d, want 0; output=%s", status, commentsOut.String())
+	}
+	activityOut := &bytes.Buffer{}
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,activity_type"}, activityOut); status != 0 {
+		t.Fatalf("tickets activity status = %d, want 0; output=%s", status, activityOut.String())
+	}
+
+	listTicket := decodeEnvelope(t, listOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+	searchTicket := decodeEnvelope(t, searchOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+	getTicket := decodeEnvelope(t, getOut.Bytes()).Result.(map[string]any)["ticket"].(map[string]any)
+	commentsResult := decodeEnvelope(t, commentsOut.Bytes()).Result.(map[string]any)
+	activityTicket := decodeEnvelope(t, activityOut.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+
+	if listTicket["id"] != float64(42) {
+		t.Fatalf("list ticket.id = %v, want 42", listTicket["id"])
+	}
+	if searchTicket["ticket_num"] != float64(42) {
+		t.Fatalf("search ticket.ticket_num = %v, want 42", searchTicket["ticket_num"])
+	}
+	if getTicket["ticket_num"] != float64(42) {
+		t.Fatalf("get ticket.ticket_num = %v, want 42", getTicket["ticket_num"])
+	}
+	if activityTicket["id"] != float64(42) {
+		t.Fatalf("activity ticket.id = %v, want 42", activityTicket["id"])
+	}
+
+	thread := getTicket["discussion_thread"].(map[string]any)
+	if thread["_id"] != "thread-42" {
+		t.Fatalf("discussion_thread._id = %v, want %q", thread["_id"], "thread-42")
+	}
+	if thread["discussion_id"] != "discussion-42" {
+		t.Fatalf("discussion_thread.discussion_id = %v, want %q", thread["discussion_id"], "discussion-42")
+	}
+	if commentsResult["thread"].(map[string]any)["id"] != thread["_id"] {
+		t.Fatalf("comments thread.id = %v, want %v", commentsResult["thread"].(map[string]any)["id"], thread["_id"])
+	}
+	if commentsResult["comments"].([]any)[0].(map[string]any)["id"] == getTicket["ticket_num"] {
+		t.Fatalf("comment.id = %v, want comment identifier distinct from ticket_num", commentsResult["comments"].([]any)[0].(map[string]any)["id"])
+	}
+}
+
 func TestTicketsSearchRejectsUnknownProjectedField(t *testing.T) {
 	t.Parallel()
 

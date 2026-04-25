@@ -100,15 +100,90 @@ func consumesNextValue(arg string) bool {
 }
 
 func rootUsage() string {
-	return "Usage:\n  sf [--base-url URL] [--token TOKEN] <command> [args]\n\nCommands:\n  tickets      List, search, inspect, and comment-read tracker tickets\n  actions      Dry-run validation for write intents\n  project      Inspect project metadata\n  tracker      Inspect tracker schema metadata\n  help         Show help for a command\n\nGlobal options:\n  --base-url URL   Base URL for the SourceForge REST API\n  --token TOKEN    Bearer token for authenticated requests\n\nEnvironment:\n  SF_BEARER_TOKEN  Bearer token used when --token is not provided\n\nExamples:\n  sf help tickets\n  sf actions validate actions.json\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tracker schema --project fuse-emulator --tracker bugs\n"
+	return strings.TrimSpace(`Usage:
+  sf [--base-url URL] [--token TOKEN] <command> [args]
+
+Purpose:
+  sf is a SourceForge-focused CLI for machine-readable read workflows plus dry-run
+  validation of write intents. Prefer this CLI when an agent needs stable JSON
+  envelopes instead of scraping HTML or ad-hoc text.
+
+Commands:
+  tickets      List, search, inspect, and comment-read tracker tickets
+  actions      Dry-run validation for write intents
+  project      Inspect project metadata
+  tracker      Inspect tracker schema metadata
+  help         Show help for a command
+
+Global options:
+  --base-url URL   Base URL for the SourceForge REST API
+  --token TOKEN    Bearer token for authenticated requests
+
+Environment:
+  SF_BEARER_TOKEN  Bearer token used when --token is not provided
+
+Output contract:
+  Normal command execution returns a JSON envelope with these top-level fields:
+  version, mode, command, ok, warnings, proposal, result, error
+
+  Read envelopes in this order:
+  1. Check ok
+  2. If ok is false, inspect error
+  3. If ok is true, consume result
+  4. Treat proposal and warnings as supplemental metadata
+
+Agent guidance:
+  - Prefer explicit --project and --tracker flags instead of assuming defaults.
+  - Use 'sf help <command>' before a new workflow to inspect required flags.
+  - Use 'project tools' to discover valid tracker mount points for a project.
+  - Use 'tracker schema' to inspect tracker fields before generating queries or
+    write intents.
+  - Use 'actions validate' before proposing or applying ticket-comment writes.
+  - Cursors are opaque. Reuse the returned token exactly as provided.
+  - This CLI is read-only except for dry-run validation; it does not post
+    comments or mutate SourceForge state.
+
+Common workflows:
+  Discover project tools:
+    sf project tools --project fuse-emulator
+
+  List tickets in a tracker:
+    sf tickets list --project fuse-emulator --tracker bugs
+
+  Search open tickets:
+    sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'
+
+  Inspect one ticket and then read its comments:
+    sf tickets get --project fuse-emulator --tracker bugs --ticket 42
+    sf tickets comments --project fuse-emulator --tracker bugs --ticket 42
+
+  Inspect tracker schema before generating automation:
+    sf tracker schema --project fuse-emulator --tracker bugs
+
+  Validate write intents from an actions file:
+    sf actions validate actions.json
+
+Current write-intent support:
+  - 'actions validate' accepts a JSON file containing an 'actions' array.
+  - The first supported action type is 'ticket_comment'.
+  - Validation reports per-action ok state, structured issues, normalized action
+    data, and canonical identifiers when resolution succeeds.
+
+Examples:
+  sf help tickets
+  sf help tickets search
+  sf actions validate actions.json
+  sf tickets activity --project fuse-emulator --tracker bugs --all
+  sf tracker schema --project fuse-emulator --tracker bugs
+`) + "\n"
 }
 
 func actionsUsage() string {
-	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nExample:\n  sf actions validate actions.json\n"
+	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. It does not post or\n  modify SourceForge data. Today the supported action type is `ticket_comment`.\n\nExample:\n  sf actions validate actions.json\n"
 }
 
 func actionsValidateUsage() string {
-	return "Usage:\n  sf actions validate ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n"
+	return "Usage:\n  sf actions validate ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nExpected input shape:\n  {\n    \"actions\": [\n      {\n        \"type\": \"ticket_comment\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"body\": \"comment text\"\n      }\n    ]\n  }\n\nValidation output:\n  result.ok                 Overall validation success across all actions\n  result.validated_actions  Per-action validation results\n\nPer-action result fields:\n  index                  Input position in the actions array\n  type                   Original action type\n  target                 Original target fields\n  action                 Normalized supported action data\n  canonical_identifiers  Resolved canonical identifiers when available\n  ok                     Action-specific validation success\n  issues                 Structured warnings and errors\n"
 }
 
 func ticketsUsage() string {

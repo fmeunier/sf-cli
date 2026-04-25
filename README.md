@@ -64,6 +64,10 @@ sf help tickets
 sf tickets search --help
 ```
 
+`sf --help` is intentionally written to be useful to coding agents. It explains
+the JSON envelope contract, common workflows, current limits, and how to
+discover the right subcommands before automating against the CLI.
+
 ## Commands
 
 List tickets:

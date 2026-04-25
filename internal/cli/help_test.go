@@ -18,6 +18,23 @@ func TestRunShowsRootHelpText(t *testing.T) {
 	}
 }
 
+func TestRootHelpIncludesAgentGuidance(t *testing.T) {
+	t.Parallel()
+
+	help := rootUsage()
+	for _, want := range []string{
+		"Purpose:",
+		"Output contract:",
+		"Agent guidance:",
+		"Use 'actions validate' before proposing or applying ticket-comment writes.",
+		"Current write-intent support:",
+	} {
+		if !bytes.Contains([]byte(help), []byte(want)) {
+			t.Fatalf("root help missing %q", want)
+		}
+	}
+}
+
 func TestRunShowsSubcommandHelpText(t *testing.T) {
 	t.Parallel()
 
@@ -41,6 +58,22 @@ func TestRunShowsHelpCommandOutput(t *testing.T) {
 	}
 	if got := stdout.String(); got != trackerSchemaUsage() {
 		t.Fatalf("help output = %q, want %q", got, trackerSchemaUsage())
+	}
+}
+
+func TestActionsValidateHelpIncludesInputAndOutputContract(t *testing.T) {
+	t.Parallel()
+
+	help := actionsValidateUsage()
+	for _, want := range []string{
+		"Expected input shape:",
+		"Validation output:",
+		"Per-action result fields:",
+		"canonical_identifiers",
+	} {
+		if !bytes.Contains([]byte(help), []byte(want)) {
+			t.Fatalf("actions validate help missing %q", want)
+		}
 	}
 }
 

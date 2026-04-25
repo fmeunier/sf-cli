@@ -227,20 +227,23 @@ Cross-surface correlation rules:
 
 Compatible schema changes should be additive, start as optional fields, and update the documentation plus the conformance tests before widening command coverage.
 
-`tickets activity` returns tickets ordered by most recent activity. Each activity entry includes `activity_type` plus `updated_at`, `last_comment_at`, and `last_comment_author` when comment metadata is available.
+`tickets activity` is a compact updated-tickets view. By default it returns open and pending tickets only, ordered by SourceForge `mod_date` descending. Use `--all` to include closed tickets in the same order.
 
-The `tickets activity` contract for `activity_type` is:
-- `comment`: the latest known activity is a normalized ticket comment, based on a comment timestamp that is newer than or equal to the ticket `mod_date`.
-- `ticket`: the latest known activity is the ticket record itself, either because there is no comment activity or because the ticket `mod_date` is newer than the latest normalized comment timestamp.
-- `unknown`: a fallback used when SourceForge does not provide enough timestamp detail to determine whether the latest activity came from the ticket record or a comment.
-
-This mapping is best-effort because SourceForge does not expose a first-class activity event type in ticket activity responses. `sf-cli` derives `activity_type` from the ticket `mod_date` plus the normalized latest comment timestamp when available, and falls back to `unknown` when those provider-specific signals are too sparse or ambiguous.
+Each activity entry uses the same ticket identifier contract as the other ticket read surfaces and currently includes `ticket_num`, `summary`, `status`, and `updated_at` in the canonical output.
 
 `tickets comments` returns normalized comment data in `result.comments`, ordered by `created_at` ascending and then `id` ascending when timestamps are equal or missing. Each comment uses the same shape: `id`, `author`, `body`, `created_at`, `edited_at`, `subject`, `type`, `is_meta`, and `attachments`. `type` is the normalized classification: `system` for SourceForge meta/system posts (`is_meta: true`) and `human` for all non-meta posts. Provider-specific or ambiguous non-meta comment forms collapse to `human` so the contract stays small and stable. Minimal thread metadata remains in `result.thread`.
 
 Most read/query commands also accept `--fields` to return a compact projection instead of the full repeated payload. For ticket-oriented commands, compact field names use the shorter aliases `id`, `title`, `created_at`, and `updated_at`.
 
 Paginated collection commands expose cursor-based `result.pagination` with `limit`, `count`, `next_cursor`, and `has_more`. Request the next page with `--cursor` using the opaque token returned by a previous response. Unpaginated collection commands omit `result.pagination` entirely.
+
+Pagination ordering and continuity rules:
+- `tickets list` preserves the provider's default tracker-list ordering. `sf-cli` does not currently add a stronger ordering guarantee on top of SourceForge for that command.
+- `tickets search` preserves the provider's search ordering. When the upstream response includes a `sort` value, that echoed value is the authoritative ordering description for the returned page.
+- `tickets activity` requests SourceForge search results ordered by `mod_date_dt desc`. Its page boundaries therefore follow SourceForge's updated-ticket ordering, not a client-side reshuffle.
+- Cursor tokens are opaque CLI cursors backed by SourceForge page-based pagination today. They identify the next page in the current ordered result set; they are not snapshot IDs and should not be treated as durable resume tokens across arbitrary data churn.
+- There is no snapshot isolation across pages. If tickets are created, updated, reopened, or closed while a client is paginating, later pages may shift and a client can observe duplicates, skips, or records moving between pages.
+- Clients that need continuity across multiple pages should deduplicate by canonical `ticket_num`, tolerate missing or shifted records, and prefer re-running a fresh query when strict recency matters more than exhaustive traversal.
 
 `tracker schema` keeps best-effort field values and now also exposes `fields[].validation` with structured validation metadata where the upstream tracker data permits it. Today that includes inferred field `type`, normalized `allowed_values`, and best-effort `default` values such as the default milestone when SourceForge exposes one.
 

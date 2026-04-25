@@ -65,7 +65,7 @@ var getTicketProjectionFields = []string{"id", "title", "description", "status",
 
 var commentProjectionFields = []string{"id", "author", "body", "created_at", "edited_at", "subject", "type", "is_meta", "attachments"}
 
-var activityProjectionFields = []string{"id", "title", "status", "activity_type", "updated_at", "last_comment_at", "last_comment_author"}
+var activityProjectionFields = []string{"id", "title", "status", "updated_at", "last_comment_at", "last_comment_author"}
 
 var commentFieldProjectors = map[string]func(api.Comment) any{
 	"attachments": func(comment api.Comment) any { return comment.Attachments },
@@ -80,7 +80,6 @@ var commentFieldProjectors = map[string]func(api.Comment) any{
 }
 
 var activityFieldProjectors = map[string]func(ticketActivity) any{
-	"activity_type":       func(activity ticketActivity) any { return activity.ActivityType },
 	"id":                  func(activity ticketActivity) any { return activity.TicketNum },
 	"last_comment_at":     func(activity ticketActivity) any { return activity.LastCommentAt },
 	"last_comment_author": func(activity ticketActivity) any { return activity.LastCommentAuthor },
@@ -181,7 +180,6 @@ type ticketActivity struct {
 	TicketNum         int    `json:"ticket_num"`
 	Summary           string `json:"summary"`
 	Status            string `json:"status"`
-	ActivityType      string `json:"activity_type"`
 	UpdatedAt         string `json:"updated_at,omitempty"`
 	LastCommentAt     string `json:"last_comment_at,omitempty"`
 	LastCommentAuthor string `json:"last_comment_author,omitempty"`
@@ -222,11 +220,10 @@ func runTicketsActivity(ctx context.Context, client *api.Client, args []string) 
 	activities := make([]ticketActivity, len(listResult.Tickets))
 	for i, ticket := range listResult.Tickets {
 		activities[i] = ticketActivity{
-			TicketNum:    ticket.TicketNum,
-			Summary:      ticket.Summary,
-			Status:       ticket.Status,
-			ActivityType: "ticket",
-			UpdatedAt:    ticket.ModDate,
+			TicketNum: ticket.TicketNum,
+			Summary:   ticket.Summary,
+			Status:    ticket.Status,
+			UpdatedAt: ticket.ModDate,
 		}
 	}
 

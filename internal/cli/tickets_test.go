@@ -184,8 +184,8 @@ func TestTicketsActivityReturnsMostRecentUpdates(t *testing.T) {
 	if first["ticket_num"] != float64(1) {
 		t.Fatalf("first.ticket_num = %v, want 1", first["ticket_num"])
 	}
-	if first["activity_type"] != "ticket" {
-		t.Fatalf("first.activity_type = %v, want %q", first["activity_type"], "ticket")
+	if _, ok := first["activity_type"]; ok {
+		t.Fatalf("first.activity_type = %v, want omitted", first["activity_type"])
 	}
 	if first["updated_at"] != "2026-04-24T01:00:00Z" {
 		t.Fatalf("first.updated_at = %v, want latest ticket timestamp", first["updated_at"])
@@ -502,21 +502,21 @@ func TestTicketsActivityProjectsSelectedFields(t *testing.T) {
 	defer server.Close()
 
 	stdout := &bytes.Buffer{}
-	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,activity_type,updated_at"}, stdout)
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,updated_at"}, stdout)
 	if status != 0 {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
 	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
 	ticket := result["tickets"].([]any)[0].(map[string]any)
-	if len(ticket) != 3 {
-		t.Fatalf("len(ticket) = %d, want 3", len(ticket))
+	if len(ticket) != 2 {
+		t.Fatalf("len(ticket) = %d, want 2", len(ticket))
 	}
 	if ticket["id"] != float64(2) {
 		t.Fatalf("ticket.id = %v, want 2", ticket["id"])
 	}
-	if ticket["activity_type"] != "ticket" {
-		t.Fatalf("ticket.activity_type = %v, want %q", ticket["activity_type"], "ticket")
+	if _, ok := ticket["activity_type"]; ok {
+		t.Fatalf("ticket.activity_type = %v, want omitted", ticket["activity_type"])
 	}
 	if _, ok := ticket["title"]; ok {
 		t.Fatalf("ticket.title = %v, want omitted", ticket["title"])
@@ -550,8 +550,8 @@ func TestTicketsActivityUsesTicketUpdatedAt(t *testing.T) {
 	}
 
 	activity := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
-	if activity["activity_type"] != "ticket" {
-		t.Fatalf("activity.activity_type = %v, want %q", activity["activity_type"], "ticket")
+	if _, ok := activity["activity_type"]; ok {
+		t.Fatalf("activity.activity_type = %v, want omitted", activity["activity_type"])
 	}
 	if activity["updated_at"] != "2026-04-24T03:00:00Z" {
 		t.Fatalf("activity.updated_at = %v, want %q", activity["updated_at"], "2026-04-24T03:00:00Z")
@@ -588,8 +588,8 @@ func TestTicketsActivityOmitsEmptyCommentFields(t *testing.T) {
 	}
 
 	activity := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
-	if activity["activity_type"] != "ticket" {
-		t.Fatalf("activity.activity_type = %v, want %q", activity["activity_type"], "ticket")
+	if _, ok := activity["activity_type"]; ok {
+		t.Fatalf("activity.activity_type = %v, want omitted", activity["activity_type"])
 	}
 	if activity["updated_at"] != "2026-04-24T01:00:00Z" {
 		t.Fatalf("activity.updated_at = %v, want %q", activity["updated_at"], "2026-04-24T01:00:00Z")
@@ -672,7 +672,7 @@ func TestTicketIdentifiersStayConsistentAcrossSurfaces(t *testing.T) {
 		t.Fatalf("tickets comments status = %d, want 0; output=%s", status, commentsOut.String())
 	}
 	activityOut := &bytes.Buffer{}
-	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,activity_type"}, activityOut); status != 0 {
+	if status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,updated_at"}, activityOut); status != 0 {
 		t.Fatalf("tickets activity status = %d, want 0; output=%s", status, activityOut.String())
 	}
 

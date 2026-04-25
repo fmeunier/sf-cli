@@ -19,7 +19,10 @@ type ticketsListConfig struct {
 	Cursor  string
 	Limit   int
 	Fields  []string
+	All     bool
 }
+
+const openTicketsActivityQuery = "!status:closed-rejected && !status:closed-invalid && !status:closed-duplicate && !status:closed-out-of-date && !status:closed-accepted && !status:closed-works-for-me && !status:closed && !status:closed-wont-fix && !status:closed-fixed"
 
 type ticketsSearchConfig struct {
 	Project string
@@ -122,6 +125,7 @@ func runTicketsSearch(ctx context.Context, client *api.Client, args []string) mo
 		Project: config.Project,
 		Tracker: config.Tracker,
 		Query:   config.Query,
+		Sort:    "",
 		Cursor:  config.Cursor,
 		Limit:   config.Limit,
 	})
@@ -193,14 +197,21 @@ type ticketsActivityResponse struct {
 func runTicketsActivity(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	config, err := parseTicketsActivityFlags(args)
 	command := "tickets.activity"
-	prop := proposal(command, "list_ticket_activity", map[string]any{"project": config.Project, "tracker": config.Tracker}, ticketsListInputs(config))
+	prop := proposal(command, "list_ticket_activity", map[string]any{"project": config.Project, "tracker": config.Tracker}, ticketsActivityInputs(config))
 	if err != nil {
 		return errorEnvelope(command, prop, "invalid_arguments", err.Error())
 	}
 
-	listResult, err := client.ListTickets(ctx, api.ListTicketsParams{
+	query := openTicketsActivityQuery
+	if config.All {
+		query = "*"
+	}
+
+	listResult, err := client.SearchTickets(ctx, api.SearchTicketsParams{
 		Project: config.Project,
 		Tracker: config.Tracker,
+		Query:   query,
+		Sort:    "mod_date_dt desc",
 		Cursor:  config.Cursor,
 		Limit:   config.Limit,
 	})
@@ -208,30 +219,15 @@ func runTicketsActivity(ctx context.Context, client *api.Client, args []string) 
 		return apiErrorEnvelope(command, prop, err)
 	}
 
-	activities := make([]ticketActivity, 0, len(listResult.Tickets))
-	for _, ticket := range listResult.Tickets {
-		activity := ticketActivity{
+	activities := make([]ticketActivity, len(listResult.Tickets))
+	for i, ticket := range listResult.Tickets {
+		activities[i] = ticketActivity{
 			TicketNum:    ticket.TicketNum,
 			Summary:      ticket.Summary,
 			Status:       ticket.Status,
-			ActivityType: classifyTicketActivityType(ticket.ModDate, api.Comment{}, false),
+			ActivityType: "ticket",
 			UpdatedAt:    ticket.ModDate,
 		}
-
-		commentsResult, err := client.GetTicketComments(ctx, api.GetTicketParams{Project: config.Project, Tracker: config.Tracker, TicketID: ticket.TicketNum})
-		if err != nil {
-			return apiErrorEnvelope(command, prop, err)
-		}
-		if lastComment, ok := lastComment(commentsResult.Comments); ok {
-			activity.LastCommentAt = lastComment.CreatedAt
-			activity.LastCommentAuthor = lastComment.Author
-			if activity.UpdatedAt == "" || lastComment.CreatedAt > activity.UpdatedAt {
-				activity.UpdatedAt = lastComment.CreatedAt
-			}
-			activity.ActivityType = classifyTicketActivityType(ticket.ModDate, lastComment, true)
-		}
-
-		activities = append(activities, activity)
 	}
 
 	sort.SliceStable(activities, func(i int, j int) bool {
@@ -254,25 +250,6 @@ func runTicketsActivity(ctx context.Context, client *api.Client, args []string) 
 	}
 
 	return successEnvelope(command, prop, result)
-}
-
-func lastComment(comments []api.Comment) (api.Comment, bool) {
-	for i := len(comments) - 1; i >= 0; i-- {
-		if comments[i].CreatedAt != "" || comments[i].Author != "" || comments[i].Body != "" {
-			return comments[i], true
-		}
-	}
-	return api.Comment{}, false
-}
-
-func classifyTicketActivityType(ticketUpdatedAt string, lastComment api.Comment, hasLastComment bool) string {
-	if hasLastComment && lastComment.CreatedAt != "" && (ticketUpdatedAt == "" || lastComment.CreatedAt >= ticketUpdatedAt) {
-		return "comment"
-	}
-	if ticketUpdatedAt != "" {
-		return "ticket"
-	}
-	return "unknown"
 }
 
 func parseTicketsListFlags(args []string) (ticketsListConfig, error) {
@@ -392,6 +369,7 @@ func parseTicketsActivityFlags(args []string) (ticketsListConfig, error) {
 	fs.StringVar(&config.Cursor, "cursor", "", "Opaque cursor for the next page")
 	fs.StringVar(&rawFields, "fields", "", "Comma-separated projected ticket activity fields")
 	fs.IntVar(&config.Limit, "limit", 25, "Page size")
+	fs.BoolVar(&config.All, "all", false, "Include closed issues")
 
 	if err := fs.Parse(args); err != nil {
 		return ticketsListConfig{}, normalizeFlagError(err)
@@ -415,6 +393,14 @@ func ticketsListInputs(config ticketsListConfig) map[string]any {
 	inputs := map[string]any{"cursor": config.Cursor, "limit": config.Limit}
 	if len(config.Fields) != 0 {
 		inputs["fields"] = config.Fields
+	}
+	return inputs
+}
+
+func ticketsActivityInputs(config ticketsListConfig) map[string]any {
+	inputs := ticketsListInputs(config)
+	if config.All {
+		inputs["all"] = true
 	}
 	return inputs
 }

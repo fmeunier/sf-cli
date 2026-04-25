@@ -89,6 +89,9 @@ func TestTicketsSearchExecutesAPIRequest(t *testing.T) {
 		if got := r.URL.Query().Get("q"); got != "status:open" {
 			t.Fatalf("q = %q, want %q", got, "status:open")
 		}
+		if got := r.URL.Query().Get("sort"); got != "" {
+			t.Fatalf("sort = %q, want empty", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":2,"summary":"Second","status":"open","assigned_to":"alice","labels":["triaged"],"created_date":"2026-04-24T00:00:00Z"}],"count":1,"page":0,"limit":25,"sort":"ticket_num_i desc","filter_choices":{"status":["open","closed"]}}`))
 	}))
@@ -142,16 +145,14 @@ func TestTicketsActivityReturnsMostRecentUpdates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/rest/p/test/tickets":
+		case "/rest/p/test/tickets/search":
+			if got := r.URL.Query().Get("q"); got != openTicketsActivityQuery {
+				t.Fatalf("q = %q, want %q", got, openTicketsActivityQuery)
+			}
+			if got := r.URL.Query().Get("sort"); got != "mod_date_dt desc" {
+				t.Fatalf("sort = %q, want %q", got, "mod_date_dt desc")
+			}
 			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"Older","status":"open","mod_date":"2026-04-24T01:00:00Z","discussion_thread":{"_id":"thread-1"}},{"ticket_num":2,"summary":"Newer comment","status":"open","mod_date":"2026-04-24T00:30:00Z","discussion_thread":{"_id":"thread-2"}}],"count":2,"page":0,"limit":25}`))
-		case "/rest/p/test/tickets/1":
-			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":1,"summary":"Older","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-1"},"mod_date":"2026-04-24T01:00:00Z"}}`))
-		case "/rest/p/test/tickets/2":
-			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":2,"summary":"Newer comment","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-2"},"mod_date":"2026-04-24T00:30:00Z"}}`))
-		case "/rest/p/test/tickets/_discuss/thread/thread-1":
-			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-1","posts":[{"author":"alice","text":"older comment","is_meta":false,"timestamp":"2026-04-24T00:45:00Z","slug":"a1"}]}}`))
-		case "/rest/p/test/tickets/_discuss/thread/thread-2":
-			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-2","posts":[{"author":"bob","text":"latest comment","is_meta":false,"timestamp":"2026-04-24T02:00:00Z","slug":"b1"}]}}`))
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -171,26 +172,26 @@ func TestTicketsActivityReturnsMostRecentUpdates(t *testing.T) {
 	if got.Proposal == nil || got.Proposal.Action != "list_ticket_activity" {
 		t.Fatalf("proposal = %#v, want action %q", got.Proposal, "list_ticket_activity")
 	}
+	if got.Proposal.Inputs["all"] != nil {
+		t.Fatalf("proposal.inputs.all = %v, want omitted", got.Proposal.Inputs["all"])
+	}
 	result := got.Result.(map[string]any)
 	activities := result["tickets"].([]any)
 	if len(activities) != 2 {
 		t.Fatalf("len(tickets) = %d, want 2", len(activities))
 	}
 	first := activities[0].(map[string]any)
-	if first["ticket_num"] != float64(2) {
-		t.Fatalf("first.ticket_num = %v, want 2", first["ticket_num"])
+	if first["ticket_num"] != float64(1) {
+		t.Fatalf("first.ticket_num = %v, want 1", first["ticket_num"])
 	}
-	if first["activity_type"] != "comment" {
-		t.Fatalf("first.activity_type = %v, want %q", first["activity_type"], "comment")
+	if first["activity_type"] != "ticket" {
+		t.Fatalf("first.activity_type = %v, want %q", first["activity_type"], "ticket")
 	}
-	if first["last_comment_at"] != "2026-04-24T02:00:00Z" {
-		t.Fatalf("first.last_comment_at = %v, want latest timestamp", first["last_comment_at"])
+	if first["updated_at"] != "2026-04-24T01:00:00Z" {
+		t.Fatalf("first.updated_at = %v, want latest ticket timestamp", first["updated_at"])
 	}
-	if first["last_comment_author"] != "bob" {
-		t.Fatalf("first.last_comment_author = %v, want %q", first["last_comment_author"], "bob")
-	}
-	if first["updated_at"] != "2026-04-24T02:00:00Z" {
-		t.Fatalf("first.updated_at = %v, want latest activity timestamp", first["updated_at"])
+	if _, ok := first["last_comment_at"]; ok {
+		t.Fatalf("first.last_comment_at = %v, want omitted", first["last_comment_at"])
 	}
 	pagination := result["pagination"].(map[string]any)
 	if pagination["count"] != float64(2) {
@@ -486,12 +487,14 @@ func TestTicketsActivityProjectsSelectedFields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/rest/p/test/tickets":
+		case "/rest/p/test/tickets/search":
+			if got := r.URL.Query().Get("q"); got != openTicketsActivityQuery {
+				t.Fatalf("q = %q, want %q", got, openTicketsActivityQuery)
+			}
+			if got := r.URL.Query().Get("sort"); got != "mod_date_dt desc" {
+				t.Fatalf("sort = %q, want %q", got, "mod_date_dt desc")
+			}
 			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":2,"summary":"Newer comment","status":"open","mod_date":"2026-04-24T00:30:00Z","discussion_thread":{"_id":"thread-2"}}],"count":1,"page":0,"limit":25}`))
-		case "/rest/p/test/tickets/2":
-			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":2,"summary":"Newer comment","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-2"},"mod_date":"2026-04-24T00:30:00Z"}}`))
-		case "/rest/p/test/tickets/_discuss/thread/thread-2":
-			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-2","posts":[{"author":"bob","text":"latest comment","is_meta":false,"timestamp":"2026-04-24T02:00:00Z","slug":"b1"}]}}`))
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -499,42 +502,41 @@ func TestTicketsActivityProjectsSelectedFields(t *testing.T) {
 	defer server.Close()
 
 	stdout := &bytes.Buffer{}
-	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,activity_type,updated_at,last_comment_author"}, stdout)
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--fields", "id,activity_type,updated_at"}, stdout)
 	if status != 0 {
 		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
 	}
 
 	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
 	ticket := result["tickets"].([]any)[0].(map[string]any)
-	if len(ticket) != 4 {
-		t.Fatalf("len(ticket) = %d, want 4", len(ticket))
+	if len(ticket) != 3 {
+		t.Fatalf("len(ticket) = %d, want 3", len(ticket))
 	}
 	if ticket["id"] != float64(2) {
 		t.Fatalf("ticket.id = %v, want 2", ticket["id"])
 	}
-	if ticket["activity_type"] != "comment" {
-		t.Fatalf("ticket.activity_type = %v, want %q", ticket["activity_type"], "comment")
-	}
-	if ticket["last_comment_author"] != "bob" {
-		t.Fatalf("ticket.last_comment_author = %v, want %q", ticket["last_comment_author"], "bob")
+	if ticket["activity_type"] != "ticket" {
+		t.Fatalf("ticket.activity_type = %v, want %q", ticket["activity_type"], "ticket")
 	}
 	if _, ok := ticket["title"]; ok {
 		t.Fatalf("ticket.title = %v, want omitted", ticket["title"])
 	}
 }
 
-func TestTicketsActivityClassifiesTicketUpdatesWithoutNewerComment(t *testing.T) {
+func TestTicketsActivityUsesTicketUpdatedAt(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/rest/p/test/tickets":
+		case "/rest/p/test/tickets/search":
+			if got := r.URL.Query().Get("q"); got != openTicketsActivityQuery {
+				t.Fatalf("q = %q, want %q", got, openTicketsActivityQuery)
+			}
+			if got := r.URL.Query().Get("sort"); got != "mod_date_dt desc" {
+				t.Fatalf("sort = %q, want %q", got, "mod_date_dt desc")
+			}
 			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"Ticket update","status":"open","mod_date":"2026-04-24T03:00:00Z","discussion_thread":{"_id":"thread-1"}}],"count":1,"page":0,"limit":25}`))
-		case "/rest/p/test/tickets/1":
-			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":1,"summary":"Ticket update","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-1"},"mod_date":"2026-04-24T03:00:00Z"}}`))
-		case "/rest/p/test/tickets/_discuss/thread/thread-1":
-			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-1","posts":[{"author":"alice","text":"older comment","is_meta":false,"timestamp":"2026-04-24T02:00:00Z","slug":"a1"}]}}`))
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -554,23 +556,25 @@ func TestTicketsActivityClassifiesTicketUpdatesWithoutNewerComment(t *testing.T)
 	if activity["updated_at"] != "2026-04-24T03:00:00Z" {
 		t.Fatalf("activity.updated_at = %v, want %q", activity["updated_at"], "2026-04-24T03:00:00Z")
 	}
-	if activity["last_comment_at"] != "2026-04-24T02:00:00Z" {
-		t.Fatalf("activity.last_comment_at = %v, want %q", activity["last_comment_at"], "2026-04-24T02:00:00Z")
+	if _, ok := activity["last_comment_at"]; ok {
+		t.Fatalf("activity.last_comment_at = %v, want omitted", activity["last_comment_at"])
 	}
 }
 
-func TestTicketsActivityFallsBackToUnknownWithoutUsableTimestamps(t *testing.T) {
+func TestTicketsActivityOmitsEmptyCommentFields(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/rest/p/test/tickets":
-			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"Unknown activity","status":"open","discussion_thread":{"_id":"thread-1"}}],"count":1,"page":0,"limit":25}`))
-		case "/rest/p/test/tickets/1":
-			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":1,"summary":"Unknown activity","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-1"}}}`))
-		case "/rest/p/test/tickets/_discuss/thread/thread-1":
-			_, _ = w.Write([]byte(`{"thread":{"_id":"thread-1","posts":[{"author":"alice","text":"comment without timestamp","is_meta":false,"slug":"a1"}]}}`))
+		case "/rest/p/test/tickets/search":
+			if got := r.URL.Query().Get("q"); got != openTicketsActivityQuery {
+				t.Fatalf("q = %q, want %q", got, openTicketsActivityQuery)
+			}
+			if got := r.URL.Query().Get("sort"); got != "mod_date_dt desc" {
+				t.Fatalf("sort = %q, want %q", got, "mod_date_dt desc")
+			}
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":1,"summary":"Only ticket update","status":"open","mod_date":"2026-04-24T01:00:00Z","discussion_thread":{"_id":"thread-1"}}],"count":1,"page":0,"limit":25}`))
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -584,14 +588,50 @@ func TestTicketsActivityFallsBackToUnknownWithoutUsableTimestamps(t *testing.T) 
 	}
 
 	activity := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
-	if activity["activity_type"] != "unknown" {
-		t.Fatalf("activity.activity_type = %v, want %q", activity["activity_type"], "unknown")
+	if activity["activity_type"] != "ticket" {
+		t.Fatalf("activity.activity_type = %v, want %q", activity["activity_type"], "ticket")
 	}
-	if _, ok := activity["updated_at"]; ok {
-		t.Fatalf("activity.updated_at = %v, want omitted", activity["updated_at"])
+	if activity["updated_at"] != "2026-04-24T01:00:00Z" {
+		t.Fatalf("activity.updated_at = %v, want %q", activity["updated_at"], "2026-04-24T01:00:00Z")
 	}
-	if activity["last_comment_author"] != "alice" {
-		t.Fatalf("activity.last_comment_author = %v, want %q", activity["last_comment_author"], "alice")
+	if _, ok := activity["last_comment_author"]; ok {
+		t.Fatalf("activity.last_comment_author = %v, want omitted", activity["last_comment_author"])
+	}
+}
+
+func TestTicketsActivityAllIncludesClosedIssues(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test/tickets/search":
+			if got := r.URL.Query().Get("q"); got != "*" {
+				t.Fatalf("q = %q, want %q", got, "*")
+			}
+			if got := r.URL.Query().Get("sort"); got != "mod_date_dt desc" {
+				t.Fatalf("sort = %q, want %q", got, "mod_date_dt desc")
+			}
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":7,"summary":"Closed ticket","status":"closed-fixed","mod_date":"2026-04-24T03:00:00Z"}],"count":1,"page":0,"limit":25}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "activity", "--project", "test", "--tracker", "tickets", "--all"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Proposal.Inputs["all"] != true {
+		t.Fatalf("proposal.inputs.all = %v, want true", got.Proposal.Inputs["all"])
+	}
+	activity := got.Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+	if activity["status"] != "closed-fixed" {
+		t.Fatalf("activity.status = %v, want %q", activity["status"], "closed-fixed")
 	}
 }
 

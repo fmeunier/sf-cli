@@ -29,7 +29,7 @@ func helpText(args []string) (string, bool) {
 		case "tickets.search":
 			return ticketsSearchUsage(), true
 		case "tickets.activity":
-			return ticketsListUsage("tickets activity"), true
+			return ticketsActivityUsage(), true
 		case "tickets.get":
 			return ticketsGetUsage("tickets get"), true
 		case "tickets.comments":
@@ -112,7 +112,7 @@ func actionsValidateUsage() string {
 }
 
 func ticketsUsage() string {
-	return "Usage:\n  sf tickets <subcommand> [args]\n\nSubcommands:\n  list        List tickets in a tracker\n  search      Search tracker tickets with a query\n  activity    Show most recently active tickets in a tracker\n  get         Fetch a single ticket\n  comments    Fetch comments for a ticket\n\nExamples:\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'\n  sf tickets activity --project fuse-emulator --tracker bugs\n  sf tickets get --project fuse-emulator --tracker bugs --ticket 42\n  sf tickets comments --project fuse-emulator --tracker bugs --ticket 42\n"
+	return "Usage:\n  sf tickets <subcommand> [args]\n\nSubcommands:\n  list        List tickets in a tracker\n  search      Search tracker tickets with a query\n  activity    Show most recently active open tickets in a tracker\n  get         Fetch a single ticket\n  comments    Fetch comments for a ticket\n\nExamples:\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'\n  sf tickets activity --project fuse-emulator --tracker bugs\n  sf tickets activity --project fuse-emulator --tracker bugs --all\n  sf tickets get --project fuse-emulator --tracker bugs --ticket 42\n  sf tickets comments --project fuse-emulator --tracker bugs --ticket 42\n"
 }
 
 func ticketsListUsage(command string) string {
@@ -121,6 +121,10 @@ func ticketsListUsage(command string) string {
 
 func ticketsSearchUsage() string {
 	return "Usage:\n  sf tickets search --project PROJECT --tracker TRACKER --query QUERY [--cursor TOKEN] [--limit N] [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --query QUERY      Ticket search query\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned ticket\n"
+}
+
+func ticketsActivityUsage() string {
+	return "Usage:\n  sf tickets activity --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N] [--fields LIST] [--all]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned item\n  --all              Include closed issues; default is open issues only\n"
 }
 
 func ticketsGetUsage(command string) string {

@@ -54,6 +54,7 @@ type SearchTicketsParams struct {
 	Project string
 	Tracker string
 	Query   string
+	Sort    string
 	Cursor  string
 	Limit   int
 }
@@ -62,6 +63,12 @@ type GetTicketParams struct {
 	Project  string
 	Tracker  string
 	TicketID int
+}
+
+type GetDiscussionThreadParams struct {
+	Project  string
+	Tracker  string
+	ThreadID string
 }
 
 type TicketDetailResponse struct {
@@ -163,6 +170,9 @@ func (c *Client) SearchTickets(ctx context.Context, params SearchTicketsParams) 
 
 	query := paginationQuery(page, params.Limit)
 	query.Set("q", params.Query)
+	if strings.TrimSpace(params.Sort) != "" {
+		query.Set("sort", strings.TrimSpace(params.Sort))
+	}
 
 	var out TicketSearchResponse
 	if err := c.GetJSON(ctx, trackerPath(params.Project, params.Tracker)+"/search", query, &out); err != nil {
@@ -189,13 +199,20 @@ func (c *Client) GetTicketComments(ctx context.Context, params GetTicketParams) 
 		return TicketCommentsResponse{}, err
 	}
 
-	threadID := ticket.Ticket.DiscussionThread.ID
-	if threadID == "" {
+	return c.GetDiscussionThreadComments(ctx, GetDiscussionThreadParams{
+		Project:  params.Project,
+		Tracker:  params.Tracker,
+		ThreadID: ticket.Ticket.DiscussionThread.ID,
+	})
+}
+
+func (c *Client) GetDiscussionThreadComments(ctx context.Context, params GetDiscussionThreadParams) (TicketCommentsResponse, error) {
+	if params.ThreadID == "" {
 		return TicketCommentsResponse{Comments: []Comment{}}, nil
 	}
 
 	var raw rawDiscussionThreadResponse
-	threadPath := fmt.Sprintf("%s/_discuss/thread/%s", trackerPath(params.Project, params.Tracker), threadID)
+	threadPath := fmt.Sprintf("%s/_discuss/thread/%s", trackerPath(params.Project, params.Tracker), params.ThreadID)
 	if err := c.GetJSON(ctx, threadPath, nil, &raw); err != nil {
 		return TicketCommentsResponse{}, err
 	}

@@ -247,7 +247,7 @@ Pagination ordering and continuity rules:
 
 `tracker schema` keeps best-effort field values and now also exposes `fields[].validation` with structured validation metadata where the upstream tracker data permits it. Today that includes inferred field `type`, normalized `allowed_values`, and best-effort `default` values such as the default milestone when SourceForge exposes one.
 
-`actions validate` reads a JSON file with an `actions` array and returns machine-readable validation results in `result.ok` and `result.validated_actions`. The first supported dry-run intent is `ticket_comment`, which checks tracker existence, ticket existence, and comment body length without applying any changes.
+`actions validate` reads a JSON file with an `actions` array and returns machine-readable validation results in `result.ok` and `result.validated_actions`. Each `validated_actions` entry preserves the existing validation summary fields and now also includes normalized supported action data in `action` plus resolved canonical identifiers in `canonical_identifiers` when available. Invalid actions still report per-action `issues` so automation can repair and retry selectively. The first supported dry-run intent is `ticket_comment`, which checks tracker existence, ticket existence, and comment body length without applying any changes.
 
 ## Scope And Limits
 

@@ -46,6 +46,17 @@ func TestActionsValidateAcceptsValidTicketCommentIntent(t *testing.T) {
 	if action["ok"] != true {
 		t.Fatalf("validated action ok = %v, want true", action["ok"])
 	}
+	normalized := action["action"].(map[string]any)
+	if normalized["type"] != "ticket_comment" {
+		t.Fatalf("action.type = %v, want %q", normalized["type"], "ticket_comment")
+	}
+	canonical := action["canonical_identifiers"].(map[string]any)
+	if canonical["ticket_num"] != float64(42) {
+		t.Fatalf("canonical_identifiers.ticket_num = %v, want 42", canonical["ticket_num"])
+	}
+	if canonical["discussion_thread_id"] != "thread-42" {
+		t.Fatalf("canonical_identifiers.discussion_thread_id = %v, want %q", canonical["discussion_thread_id"], "thread-42")
+	}
 	if _, ok := action["issues"]; ok {
 		t.Fatalf("issues = %v, want omitted", action["issues"])
 	}
@@ -79,7 +90,18 @@ func TestActionsValidateReportsInvalidTicketCommentIntent(t *testing.T) {
 	if result["ok"] != false {
 		t.Fatalf("result.ok = %v, want false", result["ok"])
 	}
-	issues := result["validated_actions"].([]any)[0].(map[string]any)["issues"].([]any)
+	action := result["validated_actions"].([]any)[0].(map[string]any)
+	canonical := action["canonical_identifiers"].(map[string]any)
+	if canonical["project"] != "test" {
+		t.Fatalf("canonical_identifiers.project = %v, want %q", canonical["project"], "test")
+	}
+	if canonical["tracker"] != "bugs" {
+		t.Fatalf("canonical_identifiers.tracker = %v, want %q", canonical["tracker"], "bugs")
+	}
+	if canonical["ticket_num"] != float64(999) {
+		t.Fatalf("canonical_identifiers.ticket_num = %v, want 999", canonical["ticket_num"])
+	}
+	issues := action["issues"].([]any)
 	if issues[0].(map[string]any)["code"] != "empty_body" {
 		t.Fatalf("issues[0].code = %v, want %q", issues[0].(map[string]any)["code"], "empty_body")
 	}

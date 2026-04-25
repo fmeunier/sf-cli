@@ -41,11 +41,13 @@ type actionsValidateResult struct {
 }
 
 type validatedAction struct {
-	Index  int               `json:"index"`
-	Type   string            `json:"type"`
-	Target map[string]any    `json:"target,omitempty"`
-	OK     bool              `json:"ok"`
-	Issues []validationIssue `json:"issues,omitempty"`
+	Index                int               `json:"index"`
+	Type                 string            `json:"type"`
+	Target               map[string]any    `json:"target,omitempty"`
+	Action               map[string]any    `json:"action,omitempty"`
+	CanonicalIdentifiers map[string]any    `json:"canonical_identifiers,omitempty"`
+	OK                   bool              `json:"ok"`
+	Issues               []validationIssue `json:"issues,omitempty"`
 }
 
 type validationIssue struct {
@@ -140,6 +142,9 @@ func validateIntentActions(ctx context.Context, client *api.Client, actions []in
 }
 
 func validateIntentAction(ctx context.Context, client *api.Client, index int, action intentAction) (validatedAction, error) {
+	trimmedProject := strings.TrimSpace(action.Project)
+	trimmedTracker := strings.TrimSpace(action.Tracker)
+	trimmedType := strings.TrimSpace(action.Type)
 	validated := validatedAction{
 		Index: index,
 		Type:  action.Type,
@@ -150,8 +155,11 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		},
 		OK: true,
 	}
+	if trimmedType == actionTypeTicketComment {
+		validated.Action = normalizeTicketCommentAction(action)
+		validated.CanonicalIdentifiers = ticketCommentCanonicalIdentifiers(trimmedProject, trimmedTracker, action.Ticket, "")
+	}
 
-	trimmedType := strings.TrimSpace(action.Type)
 	if trimmedType != actionTypeTicketComment {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{
@@ -163,11 +171,11 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		return validated, nil
 	}
 
-	if strings.TrimSpace(action.Project) == "" {
+	if trimmedProject == "" {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "missing_project", Field: "project", Message: "project is required"})
 	}
-	if strings.TrimSpace(action.Tracker) == "" {
+	if trimmedTracker == "" {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "missing_tracker", Field: "tracker", Message: "tracker is required"})
 	}
@@ -193,23 +201,24 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		return validated, nil
 	}
 
-	project, err := client.GetProject(ctx, action.Project)
+	project, err := client.GetProject(ctx, trimmedProject)
 	if err != nil {
 		if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 404 {
 			validated.OK = false
-			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "project_not_found", Field: "project", Message: fmt.Sprintf("project %q was not found", action.Project)})
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "project_not_found", Field: "project", Message: fmt.Sprintf("project %q was not found", trimmedProject)})
 			return validated, nil
 		}
 		return validatedAction{}, err
 	}
 
-	if !projectHasTracker(project.Tools, action.Tracker) {
+	if !projectHasTracker(project.Tools, trimmedTracker) {
 		validated.OK = false
-		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "tracker_not_found", Field: "tracker", Message: fmt.Sprintf("tracker %q was not found in project %q", action.Tracker, action.Project)})
+		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "tracker_not_found", Field: "tracker", Message: fmt.Sprintf("tracker %q was not found in project %q", trimmedTracker, trimmedProject)})
 		return validated, nil
 	}
 
-	if _, err := client.GetTicket(ctx, api.GetTicketParams{Project: action.Project, Tracker: action.Tracker, TicketID: action.Ticket}); err != nil {
+	ticket, err := client.GetTicket(ctx, api.GetTicketParams{Project: trimmedProject, Tracker: trimmedTracker, TicketID: action.Ticket})
+	if err != nil {
 		if apiErr, ok := err.(*api.APIError); ok && apiErr.StatusCode == 404 {
 			validated.OK = false
 			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "ticket_not_found", Field: "ticket", Message: fmt.Sprintf("ticket %d was not found", action.Ticket)})
@@ -217,8 +226,43 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		}
 		return validatedAction{}, err
 	}
+	validated.CanonicalIdentifiers = ticketCommentCanonicalIdentifiers(project.Shortname, trimmedTracker, ticket.Ticket.TicketNum, ticket.Ticket.DiscussionThread.ID)
 
 	return validated, nil
+}
+
+func normalizeTicketCommentAction(action intentAction) map[string]any {
+	return map[string]any{
+		"type": actionTypeTicketComment,
+		"target": map[string]any{
+			"project": strings.TrimSpace(action.Project),
+			"tracker": strings.TrimSpace(action.Tracker),
+			"ticket":  action.Ticket,
+		},
+		"inputs": map[string]any{
+			"body": action.Body,
+		},
+	}
+}
+
+func ticketCommentCanonicalIdentifiers(project string, tracker string, ticket int, discussionThreadID string) map[string]any {
+	canonical := make(map[string]any)
+	if project != "" {
+		canonical["project"] = project
+	}
+	if tracker != "" {
+		canonical["tracker"] = tracker
+	}
+	if ticket > 0 {
+		canonical["ticket_num"] = ticket
+	}
+	if discussionThreadID != "" {
+		canonical["discussion_thread_id"] = discussionThreadID
+	}
+	if len(canonical) == 0 {
+		return nil
+	}
+	return canonical
 }
 
 func projectHasTracker(tools []api.ProjectTool, tracker string) bool {

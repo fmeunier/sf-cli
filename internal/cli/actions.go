@@ -23,6 +23,11 @@ type actionsValidateConfig struct {
 	ActionFile string
 }
 
+type actionsApplyConfig struct {
+	ActionFile string
+	Confirm    bool
+}
+
 type actionsFile struct {
 	Actions []intentAction `json:"actions"`
 }
@@ -65,6 +70,22 @@ type validationIssue struct {
 	Message  string `json:"message"`
 }
 
+type actionsApplyResult struct {
+	OK               bool                `json:"ok"`
+	Confirmed        bool                `json:"confirmed"`
+	Executed         bool                `json:"executed"`
+	ValidatedActions []validatedAction   `json:"validated_actions"`
+	AppliedActions   []appliedActionStep `json:"applied_actions,omitempty"`
+}
+
+type appliedActionStep struct {
+	Index  int               `json:"index"`
+	Type   string            `json:"type"`
+	Target map[string]any    `json:"target,omitempty"`
+	OK     bool              `json:"ok"`
+	Issues []validationIssue `json:"issues,omitempty"`
+}
+
 func handleActions(ctx context.Context, client *api.Client, args []string) model.Envelope {
 	if len(args) == 0 {
 		return errorEnvelope("actions", proposal("actions", "dispatch_actions_command", nil, nil), "invalid_arguments", "missing actions subcommand\n\n"+actionsUsage())
@@ -73,10 +94,53 @@ func handleActions(ctx context.Context, client *api.Client, args []string) model
 	switch args[0] {
 	case "validate":
 		return runActionsValidate(ctx, client, args[1:])
+	case "apply":
+		return runActionsApply(ctx, client, args[1:])
 	default:
 		command := "actions." + args[0]
 		return errorEnvelope(command, proposal(command, actionForActions(args[0]), nil, nil), "not_implemented", fmt.Sprintf("command %q is not implemented yet\n\n%s", command, actionsUsage()))
 	}
+}
+
+func runActionsApply(ctx context.Context, client *api.Client, args []string) model.Envelope {
+	config, err := parseActionsApplyFlags(args)
+	command := "actions.apply"
+	prop := proposal(command, "apply_actions_file", nil, map[string]any{"file": config.ActionFile, "confirm": config.Confirm})
+	if err != nil {
+		return errorEnvelopeMode("dry_run", command, prop, "invalid_arguments", err.Error(), nil)
+	}
+
+	input, err := readActionsFile(config.ActionFile)
+	if err != nil {
+		return errorEnvelopeMode("dry_run", command, prop, "invalid_input", err.Error(), nil)
+	}
+
+	validated, err := validateIntentActions(ctx, client, input.Actions)
+	if err != nil {
+		apiErr := apiErrorEnvelope(command, prop, err)
+		apiErr.Mode = "dry_run"
+		return apiErr
+	}
+
+	result := actionsApplyResult{
+		OK:               validated.OK,
+		Confirmed:        config.Confirm,
+		Executed:         false,
+		ValidatedActions: validated.ValidatedActions,
+	}
+	if !validated.OK {
+		return errorEnvelopeMode("dry_run", command, prop, "invalid_actions", "actions file contains invalid actions; run `sf actions validate` for details", result)
+	}
+	if !config.Confirm {
+		return successEnvelopeMode("dry_run", command, prop, result)
+	}
+	if !client.HasToken() {
+		return errorEnvelopeMode("dry_run", command, prop, "authentication_required", "confirmed apply requires a bearer token via `--token` or `SF_BEARER_TOKEN`", result)
+	}
+
+	result.OK = false
+	result.AppliedActions = unsupportedAppliedActions(validated.ValidatedActions)
+	return errorEnvelopeMode("apply", command, prop, "unsupported_action_type", "no write action types are enabled for `sf actions apply` yet", result)
 }
 
 func runActionsValidate(ctx context.Context, client *api.Client, args []string) model.Envelope {
@@ -112,6 +176,24 @@ func parseActionsValidateFlags(args []string) (actionsValidateConfig, error) {
 	}
 
 	return actionsValidateConfig{ActionFile: strings.TrimSpace(fs.Arg(0))}, nil
+}
+
+func parseActionsApplyFlags(args []string) (actionsApplyConfig, error) {
+	fs := flag.NewFlagSet("actions apply", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	config := actionsApplyConfig{}
+	fs.BoolVar(&config.Confirm, "confirm", false, "Execute validated actions instead of stopping at dry-run")
+
+	if err := fs.Parse(args); err != nil {
+		return actionsApplyConfig{}, normalizeFlagError(err)
+	}
+	if fs.NArg() != 1 {
+		return actionsApplyConfig{}, fmt.Errorf("missing required actions file\n\n%s", actionsApplyUsage())
+	}
+
+	config.ActionFile = strings.TrimSpace(fs.Arg(0))
+	return config, nil
 }
 
 func readActionsFile(filePath string) (actionsFile, error) {
@@ -372,6 +454,25 @@ func actionTarget(action intentAction) map[string]any {
 		target["ticket"] = action.Ticket
 	}
 	return target
+}
+
+func unsupportedAppliedActions(validated []validatedAction) []appliedActionStep {
+	applied := make([]appliedActionStep, 0, len(validated))
+	for _, action := range validated {
+		applied = append(applied, appliedActionStep{
+			Index:  action.Index,
+			Type:   action.Type,
+			Target: action.Target,
+			OK:     false,
+			Issues: []validationIssue{{
+				Severity: "error",
+				Code:     "unsupported_action_type",
+				Field:    "type",
+				Message:  fmt.Sprintf("action type %q is not enabled for apply yet", action.Type),
+			}},
+		})
+	}
+	return applied
 }
 
 func appendLabelsValidationIssues(validated *validatedAction, labels []string) {

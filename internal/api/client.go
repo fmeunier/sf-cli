@@ -79,6 +79,10 @@ func (c *Client) NewRequest(ctx context.Context, method string, endpointPath str
 	return req, nil
 }
 
+func (c *Client) HasToken() bool {
+	return strings.TrimSpace(c.token) != ""
+}
+
 func (c *Client) GetJSON(ctx context.Context, endpointPath string, query url.Values, out any) error {
 	req, err := c.NewRequest(ctx, http.MethodGet, endpointPath, query)
 	if err != nil {

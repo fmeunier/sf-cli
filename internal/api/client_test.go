@@ -23,6 +23,22 @@ func TestNewRequestSetsBearerHeader(t *testing.T) {
 	if got := req.Header.Get("Authorization"); got != "Bearer secret-token" {
 		t.Fatalf("Authorization header = %q, want %q", got, "Bearer secret-token")
 	}
+	if !client.HasToken() {
+		t.Fatal("HasToken() = false, want true")
+	}
+}
+
+func TestHasTokenIsFalseWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewClient(Options{BaseURL: "https://example.com/rest"})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.HasToken() {
+		t.Fatal("HasToken() = true, want false")
+	}
 }
 
 func TestGetJSONReturnsAPIErrorMessage(t *testing.T) {

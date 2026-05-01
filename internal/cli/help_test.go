@@ -37,9 +37,28 @@ func TestRootHelpIncludesAgentGuidance(t *testing.T) {
 		"Canonical ticket payloads use SourceForge-native field names; compact",
 		"Current write-intent support:",
 		"Supported action types today are 'ticket_create', 'ticket_labels', and",
+		"'actions apply' is scaffolded with dry-run and confirmation safety plumbing,",
 	} {
 		if !bytes.Contains([]byte(help), []byte(want)) {
 			t.Fatalf("root help missing %q", want)
+		}
+	}
+}
+
+func TestActionsApplyHelpIncludesSafetyGuidance(t *testing.T) {
+	t.Parallel()
+
+	help := actionsApplyUsage()
+	for _, want := range []string{
+		"Usage:",
+		"sf actions apply [--confirm] ACTIONS_FILE",
+		"Safety model:",
+		"Without `--confirm`, the command validates and previews only.",
+		"Current execution scope:",
+		"No write action types are enabled yet",
+	} {
+		if !bytes.Contains([]byte(help), []byte(want)) {
+			t.Fatalf("actions apply help missing %q", want)
 		}
 	}
 }

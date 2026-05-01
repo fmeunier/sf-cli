@@ -36,6 +36,8 @@ func helpText(args []string) (string, bool) {
 			return ticketsGetUsage("tickets comments"), true
 		case "actions.validate":
 			return actionsValidateUsage(), true
+		case "actions.apply":
+			return actionsApplyUsage(), true
 		case "project.tools":
 			return projectToolsUsage(), true
 		case "tracker.schema":
@@ -105,12 +107,12 @@ func rootUsage() string {
 
 Purpose:
 	  sf is a SourceForge CLI for discovering project and tracker metadata, reading
-	  tracker tickets through stable JSON envelopes, and dry-run validating write
-	  intents before proposing external mutations.
+	  tracker tickets through stable JSON envelopes, and validating or safely
+	  staging write intents before proposing external mutations.
 
 Commands:
   tickets      List, search, inspect, and comment-read tracker tickets
-  actions      Dry-run validation for write intents
+	  actions      Validate and safely stage write intents
   project      Inspect project metadata
   tracker      Inspect tracker schema metadata
   help         Show help for a command
@@ -155,8 +157,9 @@ Agent guidance:
 	    --fields projections may use aliases such as 'id' and 'title'.
 	  - Cursors are opaque numeric tokens. Reuse the returned value exactly as
 	    provided in 'result.pagination.next'.
-  - This CLI is read-only except for dry-run validation; it does not post
-	    comments or mutate SourceForge state.
+	  - Current releases remain effectively read-only. 'actions apply' is
+	    scaffolded with dry-run and confirmation safety plumbing, but no write
+	    action types are enabled yet.
 
 Command map:
   sf project tools
@@ -181,8 +184,12 @@ Command map:
     Fetch best-effort schema sections: project, tracker, options, milestones,
     saved_bins, and fields.
 
-  sf actions validate
-    Validate an actions JSON file for supported dry-run write intents.
+	  sf actions validate
+	    Validate an actions JSON file for supported dry-run write intents.
+
+	  sf actions apply
+	    Run apply safety checks and require explicit confirmation before any
+	    future write execution.
 
 Common workflows:
   Discover project tools:
@@ -209,8 +216,11 @@ Common workflows:
 
 Current write-intent support:
   - 'actions validate' accepts a JSON file containing an 'actions' array.
-  - Supported action types today are 'ticket_create', 'ticket_labels', and
-    'ticket_comment'.
+	  - Supported action types today are 'ticket_create', 'ticket_labels', and
+	    'ticket_comment'.
+	  - 'actions apply' is scaffolded with dry-run and confirmation safety plumbing,
+	    requires bearer auth when --confirm is used, and still rejects all write
+	    action types for now.
   - 'ticket_create' validates new ticket drafts with required summary text,
     optional description, and optional labels that do not contain commas.
   - 'ticket_labels' validates replacement-style label updates with one or more
@@ -231,11 +241,15 @@ Examples:
 }
 
 func actionsUsage() string {
-	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. It does not post or\n  modify SourceForge data. Today the supported action types are `ticket_create`,\n  `ticket_labels`, and `ticket_comment`. `ticket_create` currently validates\n  summary, description, and labels only. `ticket_labels` currently validates\n  replacement-style label updates only. `ticket_comment` currently validates new\n  top-level discussion posts on existing tickets with discussion enabled.\n  See `sf help actions validate` for the exact input shape, normalized output,\n  and unsupported fields.\n\nExample:\n  sf actions validate actions.json\n"
+	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n  apply       Run apply safety checks for an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. `actions apply`\n  layers confirmation-oriented safety checks on top of the same file validation\n  path. Today the supported action types are `ticket_create`, `ticket_labels`,\n  and `ticket_comment` for validation only. No write action types are enabled\n  for confirmed apply execution yet. See `sf help actions validate` for the\n  exact input shape and `sf help actions apply` for the apply safety model.\n\nExamples:\n  sf actions validate actions.json\n  sf actions apply actions.json\n  sf actions apply --confirm actions.json\n"
 }
 
 func actionsValidateUsage() string {
 	return "Usage:\n  sf actions validate ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nSupported action types today:\n  ticket_create   Validate a new ticket draft\n  ticket_labels   Replace the ticket label set with a validated labels array\n  ticket_comment  Validate a new top-level ticket discussion post\n\nExpected input shape:\n  {\n    \"actions\": [\n      {\n        \"type\": \"ticket_create\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"summary\": \"Add deterministic export\",\n        \"description\": \"Normalize timestamps before writing output\",\n        \"labels\": [\"triaged\", \"needs-review\"]\n      },\n      {\n        \"type\": \"ticket_labels\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"labels\": [\"triaged\", \"needs-review\"]\n      },\n      {\n        \"type\": \"ticket_comment\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"body\": \"comment text\"\n      }\n    ]\n  }\n\nCurrent ticket_create scope:\n  - validates SourceForge-compatible create inputs for `summary`, optional\n    `description`, and optional `labels`\n  - requires a non-empty `summary`\n  - rejects labels containing commas because the SourceForge write API uses a\n    comma-separated `ticket_form.labels` field\n  - does not yet model `status`, `assigned_to`, `private`,\n    `discussion_disabled`, or `custom_fields`\n\nCurrent ticket_labels scope:\n  - validates replacement-style label updates only\n  - requires one or more non-empty labels\n  - rejects labels containing commas because the SourceForge write API uses a\n    comma-separated `ticket_form.labels` field\n\nCurrent ticket_comment scope:\n  - validates new top-level discussion posts only; reply posts are not modeled\n    yet\n  - requires a non-empty `body`\n  - requires the target ticket to exist, allow discussion posts, and expose a\n    discussion thread id for SourceForge's documented post endpoint\n\nValidation output:\n  result.ok                 Overall validation success across all actions\n  result.validated_actions  Per-action validation results\n\nPer-action result fields:\n  index                  Input position in the actions array\n  type                   Original action type\n  target                 Original target fields\n  action                 Normalized supported action data\n  canonical_identifiers  Resolved canonical identifiers when available\n  ok                     Action-specific validation success\n  issues                 Structured warnings and errors\n"
+}
+
+func actionsApplyUsage() string {
+	return "Usage:\n  sf actions apply [--confirm] ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nOptions:\n  --confirm     Allow apply to proceed past dry-run validation checks\n\nSafety model:\n  Without `--confirm`, the command validates and previews only. This default\n  mode performs the same action-file checks as `sf actions validate` and stops\n  before any execution path.\n\n  With `--confirm`, the command may continue into write execution once specific\n  action types are enabled. Confirmation does not bypass validation. Invalid\n  actions still fail before execution begins, and bearer authentication is\n  required via `--token` or `SF_BEARER_TOKEN`.\n\nCurrent execution scope:\n  No write action types are enabled yet. Confirmed apply therefore returns\n  structured unsupported-action results after validation succeeds.\n\nResult shape:\n  result.ok                 overall apply-stage success\n  result.confirmed          whether `--confirm` was provided\n  result.executed           whether any write steps were executed\n  result.validated_actions  per-action validation records reused from validate\n  result.applied_actions    per-action execution records when confirmation was requested\n"
 }
 
 func ticketsUsage() string {

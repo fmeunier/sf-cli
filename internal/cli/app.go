@@ -147,14 +147,18 @@ func proposal(command string, action string, target map[string]any, inputs map[s
 }
 
 func errorEnvelope(command string, proposal *model.Proposal, code string, message string) model.Envelope {
+	return errorEnvelopeMode("read_only", command, proposal, code, message, nil)
+}
+
+func errorEnvelopeMode(mode string, command string, proposal *model.Proposal, code string, message string, result any) model.Envelope {
 	return model.Envelope{
 		Version:  "v1",
-		Mode:     "read_only",
+		Mode:     mode,
 		Command:  command,
 		OK:       false,
 		Warnings: []string{},
 		Proposal: proposal,
-		Result:   nil,
+		Result:   result,
 		Error: &model.Error{
 			Code:    code,
 			Message: message,
@@ -163,9 +167,13 @@ func errorEnvelope(command string, proposal *model.Proposal, code string, messag
 }
 
 func successEnvelope(command string, proposal *model.Proposal, result any, warnings ...string) model.Envelope {
+	return successEnvelopeMode("read_only", command, proposal, result, warnings...)
+}
+
+func successEnvelopeMode(mode string, command string, proposal *model.Proposal, result any, warnings ...string) model.Envelope {
 	return model.Envelope{
 		Version:  "v1",
-		Mode:     "read_only",
+		Mode:     mode,
 		Command:  command,
 		OK:       true,
 		Warnings: append([]string{}, warnings...),
@@ -223,6 +231,9 @@ func actionForProject(subcommand string) string {
 func actionForActions(subcommand string) string {
 	if subcommand == "validate" {
 		return "validate_actions_file"
+	}
+	if subcommand == "apply" {
+		return "apply_actions_file"
 	}
 	return "dispatch_actions_command"
 }

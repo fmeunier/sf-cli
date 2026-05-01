@@ -7,8 +7,141 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
+
+func TestActionsValidateAcceptsValidTicketCreateIntent(t *testing.T) {
+	t.Parallel()
+
+	var ticketRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test":
+			_, _ = w.Write([]byte(`{"shortname":"test","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs"}]}`))
+		case "/rest/p/test/bugs/42":
+			ticketRequests.Add(1)
+			t.Fatalf("ticket_create validation should not fetch existing tickets")
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","labels":[" triaged ","needs-review"]}]}`)
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "validate", actionsPath}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
+	if result["ok"] != true {
+		t.Fatalf("result.ok = %v, want true", result["ok"])
+	}
+	action := result["validated_actions"].([]any)[0].(map[string]any)
+	if action["ok"] != true {
+		t.Fatalf("validated action ok = %v, want true", action["ok"])
+	}
+	if ticketRequests.Load() != 0 {
+		t.Fatalf("ticketRequests = %d, want 0", ticketRequests.Load())
+	}
+	normalized := action["action"].(map[string]any)
+	if normalized["type"] != "ticket_create" {
+		t.Fatalf("action.type = %v, want %q", normalized["type"], "ticket_create")
+	}
+	inputs := normalized["inputs"].(map[string]any)
+	if inputs["summary"] != "New ticket" {
+		t.Fatalf("inputs.summary = %v, want %q", inputs["summary"], "New ticket")
+	}
+	labels := inputs["labels"].([]any)
+	if len(labels) != 2 || labels[0] != "triaged" || labels[1] != "needs-review" {
+		t.Fatalf("normalized labels = %v, want trimmed labels", labels)
+	}
+	canonical := action["canonical_identifiers"].(map[string]any)
+	if canonical["project"] != "test" || canonical["tracker"] != "bugs" {
+		t.Fatalf("canonical_identifiers = %v, want project/tracker", canonical)
+	}
+	if _, ok := canonical["ticket_num"]; ok {
+		t.Fatalf("canonical_identifiers.ticket_num = %v, want omitted", canonical["ticket_num"])
+	}
+	if _, ok := action["issues"]; ok {
+		t.Fatalf("issues = %v, want omitted", action["issues"])
+	}
+}
+
+func TestActionsValidateRejectsUnsupportedTicketCreateFields(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test":
+			_, _ = w.Write([]byte(`{"shortname":"test","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs"}]}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","ticket":42,"summary":"New ticket","status":"open","assigned_to":"alice","private":true,"discussion_disabled":false,"custom_fields":{"_milestone":"v1"}}]}`)
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "validate", actionsPath}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
+	if result["ok"] != false {
+		t.Fatalf("result.ok = %v, want false", result["ok"])
+	}
+	action := result["validated_actions"].([]any)[0].(map[string]any)
+	issues := action["issues"].([]any)
+	if issues[0].(map[string]any)["code"] != "unsupported_ticket_target" {
+		t.Fatalf("issues[0].code = %v, want %q", issues[0].(map[string]any)["code"], "unsupported_ticket_target")
+	}
+	unsupportedFields := map[string]bool{}
+	for _, rawIssue := range issues[1:] {
+		issue := rawIssue.(map[string]any)
+		if issue["code"] != "unsupported_ticket_create_field" {
+			t.Fatalf("issue.code = %v, want %q", issue["code"], "unsupported_ticket_create_field")
+		}
+		unsupportedFields[issue["field"].(string)] = true
+	}
+	for _, field := range []string{"status", "assigned_to", "private", "discussion_disabled", "custom_fields"} {
+		if !unsupportedFields[field] {
+			t.Fatalf("unsupported fields = %v, want %q present", unsupportedFields, field)
+		}
+	}
+}
+
+func TestActionsValidateReportsInvalidTicketCreateSummaryAndLabels(t *testing.T) {
+	t.Parallel()
+
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" ","labels":[" ","needs,review"]}]}`)
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"actions", "validate", actionsPath}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	result := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)
+	if result["ok"] != false {
+		t.Fatalf("result.ok = %v, want false", result["ok"])
+	}
+	action := result["validated_actions"].([]any)[0].(map[string]any)
+	issues := action["issues"].([]any)
+	if issues[0].(map[string]any)["code"] != "missing_summary" {
+		t.Fatalf("issues[0].code = %v, want %q", issues[0].(map[string]any)["code"], "missing_summary")
+	}
+	if issues[1].(map[string]any)["code"] != "empty_label" {
+		t.Fatalf("issues[1].code = %v, want %q", issues[1].(map[string]any)["code"], "empty_label")
+	}
+	if issues[2].(map[string]any)["code"] != "unsupported_label_value" {
+		t.Fatalf("issues[2].code = %v, want %q", issues[2].(map[string]any)["code"], "unsupported_label_value")
+	}
+}
 
 func TestActionsValidateAcceptsValidTicketCommentIntent(t *testing.T) {
 	t.Parallel()

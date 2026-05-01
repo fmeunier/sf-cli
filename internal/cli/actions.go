@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	actionTypeTicketCreate  = "ticket_create"
 	actionTypeTicketComment = "ticket_comment"
 	actionTypeTicketLabels  = "ticket_labels"
 )
@@ -27,12 +28,19 @@ type actionsFile struct {
 }
 
 type intentAction struct {
-	Type    string   `json:"type"`
-	Project string   `json:"project"`
-	Tracker string   `json:"tracker"`
-	Ticket  int      `json:"ticket"`
-	Body    string   `json:"body"`
-	Labels  []string `json:"labels"`
+	Type               string         `json:"type"`
+	Project            string         `json:"project"`
+	Tracker            string         `json:"tracker"`
+	Ticket             int            `json:"ticket"`
+	Summary            string         `json:"summary"`
+	Description        string         `json:"description"`
+	Body               string         `json:"body"`
+	Labels             []string       `json:"labels"`
+	Status             string         `json:"status"`
+	AssignedTo         string         `json:"assigned_to"`
+	Private            *bool          `json:"private"`
+	DiscussionDisabled *bool          `json:"discussion_disabled"`
+	CustomFields       map[string]any `json:"custom_fields"`
 }
 
 type actionsValidateResult struct {
@@ -146,14 +154,14 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 	trimmedTracker := strings.TrimSpace(action.Tracker)
 	trimmedType := strings.TrimSpace(action.Type)
 	validated := validatedAction{
-		Index: index,
-		Type:  action.Type,
-		Target: map[string]any{
-			"project": action.Project,
-			"tracker": action.Tracker,
-			"ticket":  action.Ticket,
-		},
-		OK: true,
+		Index:  index,
+		Type:   action.Type,
+		Target: actionTarget(action),
+		OK:     true,
+	}
+	if trimmedType == actionTypeTicketCreate {
+		validated.Action = normalizeTicketCreateAction(action)
+		validated.CanonicalIdentifiers = ticketCreateCanonicalIdentifiers(trimmedProject, trimmedTracker)
 	}
 	if trimmedType == actionTypeTicketComment {
 		validated.Action = normalizeTicketCommentAction(action)
@@ -164,7 +172,7 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		validated.CanonicalIdentifiers = ticketLabelsCanonicalIdentifiers(trimmedProject, trimmedTracker, action.Ticket)
 	}
 
-	if trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
+	if trimmedType != actionTypeTicketCreate && trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{
 			Severity: "error",
@@ -183,12 +191,23 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "missing_tracker", Field: "tracker", Message: "tracker is required"})
 	}
-	if action.Ticket <= 0 {
+	if requiresExistingTicket(trimmedType) && action.Ticket <= 0 {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "invalid_ticket", Field: "ticket", Message: "ticket must be > 0"})
 	}
 
 	switch trimmedType {
+	case actionTypeTicketCreate:
+		if strings.TrimSpace(action.Summary) == "" {
+			validated.OK = false
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "missing_summary", Field: "summary", Message: "summary is required"})
+		}
+		if action.Ticket != 0 {
+			validated.OK = false
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_target", Field: "ticket", Message: "ticket must be omitted for ticket_create"})
+		}
+		appendUnsupportedTicketCreateFieldIssues(&validated, action)
+		appendLabelsValidationIssues(&validated, action.Labels)
 	case actionTypeTicketComment:
 		bodyLength := len(strings.TrimSpace(action.Body))
 		if bodyLength == 0 {
@@ -201,19 +220,7 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "missing_labels", Field: "labels", Message: "labels must contain at least one value"})
 			break
 		}
-		for i, label := range action.Labels {
-			trimmedLabel := strings.TrimSpace(label)
-			field := fmt.Sprintf("labels[%d]", i)
-			if trimmedLabel == "" {
-				validated.OK = false
-				validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "empty_label", Field: field, Message: "labels must not contain empty values"})
-				continue
-			}
-			if strings.Contains(trimmedLabel, ",") {
-				validated.OK = false
-				validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_label_value", Field: field, Message: "labels must not contain commas"})
-			}
-		}
+		appendLabelsValidationIssues(&validated, action.Labels)
 	}
 
 	if !validated.OK {
@@ -233,6 +240,10 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 	if !projectHasTracker(project.Tools, trimmedTracker) {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "tracker_not_found", Field: "tracker", Message: fmt.Sprintf("tracker %q was not found in project %q", trimmedTracker, trimmedProject)})
+		return validated, nil
+	}
+	if trimmedType == actionTypeTicketCreate {
+		validated.CanonicalIdentifiers = ticketCreateCanonicalIdentifiers(project.Shortname, trimmedTracker)
 		return validated, nil
 	}
 
@@ -278,6 +289,29 @@ func normalizeTicketCommentAction(action intentAction) map[string]any {
 	}
 }
 
+func normalizeTicketCreateAction(action intentAction) map[string]any {
+	inputs := map[string]any{"summary": strings.TrimSpace(action.Summary)}
+	if action.Description != "" {
+		inputs["description"] = action.Description
+	}
+	if len(action.Labels) != 0 {
+		labels := make([]string, 0, len(action.Labels))
+		for _, label := range action.Labels {
+			labels = append(labels, strings.TrimSpace(label))
+		}
+		inputs["labels"] = labels
+	}
+
+	return map[string]any{
+		"type": actionTypeTicketCreate,
+		"target": map[string]any{
+			"project": strings.TrimSpace(action.Project),
+			"tracker": strings.TrimSpace(action.Tracker),
+		},
+		"inputs": inputs,
+	}
+}
+
 func normalizeTicketLabelsAction(action intentAction) map[string]any {
 	labels := make([]string, 0, len(action.Labels))
 	for _, label := range action.Labels {
@@ -319,6 +353,64 @@ func ticketCommentCanonicalIdentifiers(project string, tracker string, ticket in
 
 func ticketLabelsCanonicalIdentifiers(project string, tracker string, ticket int) map[string]any {
 	return ticketCommentCanonicalIdentifiers(project, tracker, ticket, "")
+}
+
+func ticketCreateCanonicalIdentifiers(project string, tracker string) map[string]any {
+	return ticketCommentCanonicalIdentifiers(project, tracker, 0, "")
+}
+
+func requiresExistingTicket(actionType string) bool {
+	return actionType == actionTypeTicketComment || actionType == actionTypeTicketLabels
+}
+
+func actionTarget(action intentAction) map[string]any {
+	target := map[string]any{
+		"project": action.Project,
+		"tracker": action.Tracker,
+	}
+	if requiresExistingTicket(strings.TrimSpace(action.Type)) || action.Ticket != 0 {
+		target["ticket"] = action.Ticket
+	}
+	return target
+}
+
+func appendLabelsValidationIssues(validated *validatedAction, labels []string) {
+	for i, label := range labels {
+		trimmedLabel := strings.TrimSpace(label)
+		field := fmt.Sprintf("labels[%d]", i)
+		if trimmedLabel == "" {
+			validated.OK = false
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "empty_label", Field: field, Message: "labels must not contain empty values"})
+			continue
+		}
+		if strings.Contains(trimmedLabel, ",") {
+			validated.OK = false
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_label_value", Field: field, Message: "labels must not contain commas"})
+		}
+	}
+}
+
+func appendUnsupportedTicketCreateFieldIssues(validated *validatedAction, action intentAction) {
+	if strings.TrimSpace(action.Status) != "" {
+		validated.OK = false
+		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "status", Message: "status is not supported for ticket_create"})
+	}
+	if strings.TrimSpace(action.AssignedTo) != "" {
+		validated.OK = false
+		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "assigned_to", Message: "assigned_to is not supported for ticket_create"})
+	}
+	if action.Private != nil {
+		validated.OK = false
+		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "private", Message: "private is not supported for ticket_create"})
+	}
+	if action.DiscussionDisabled != nil {
+		validated.OK = false
+		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "discussion_disabled", Message: "discussion_disabled is not supported for ticket_create"})
+	}
+	if len(action.CustomFields) != 0 {
+		validated.OK = false
+		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "custom_fields", Message: "custom_fields are not supported for ticket_create"})
+	}
 }
 
 func projectHasTracker(tools []api.ProjectTool, tracker string) bool {

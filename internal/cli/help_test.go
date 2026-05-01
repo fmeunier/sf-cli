@@ -28,9 +28,9 @@ func TestRootHelpIncludesAgentGuidance(t *testing.T) {
 		"Agent guidance:",
 		"Review recently active tickets:",
 		"sf tickets activity --project fuse-emulator --tracker bugs",
-		"Use 'actions validate' before proposing or applying ticket label or comment writes.",
+		"Use 'actions validate' before proposing or applying ticket create, label, or",
 		"Current write-intent support:",
-		"Supported action types today are 'ticket_labels' and 'ticket_comment'.",
+		"Supported action types today are 'ticket_create', 'ticket_labels', and",
 	} {
 		if !bytes.Contains([]byte(help), []byte(want)) {
 			t.Fatalf("root help missing %q", want)
@@ -71,6 +71,8 @@ func TestActionsValidateHelpIncludesInputAndOutputContract(t *testing.T) {
 	for _, want := range []string{
 		"Supported action types today:",
 		"Expected input shape:",
+		"ticket_create",
+		"Current ticket_create scope:",
 		"ticket_labels",
 		"Current ticket_labels scope:",
 		"Current ticket_comment scope:",

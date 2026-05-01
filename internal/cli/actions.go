@@ -138,9 +138,36 @@ func runActionsApply(ctx context.Context, client *api.Client, args []string) mod
 		return errorEnvelopeMode("dry_run", command, prop, "authentication_required", "confirmed apply requires a bearer token via `--token` or `SF_BEARER_TOKEN`", result)
 	}
 
-	result.OK = false
-	result.AppliedActions = unsupportedAppliedActions(validated.ValidatedActions)
-	return errorEnvelopeMode("apply", command, prop, "unsupported_action_type", "no write action types are enabled for `sf actions apply` yet", result)
+	if applied, ok := unsupportedApplyPlan(validated.ValidatedActions); !ok {
+		result.OK = false
+		result.AppliedActions = applied
+		return errorEnvelopeMode("apply", command, prop, "unsupported_action_type", "confirmed apply currently supports only `ticket_comment` actions", result)
+	}
+
+	result.AppliedActions = make([]appliedActionStep, 0, len(validated.ValidatedActions))
+	result.Executed = true
+	for i, action := range input.Actions {
+		applied := appliedActionStep{
+			Index:  validated.ValidatedActions[i].Index,
+			Type:   validated.ValidatedActions[i].Type,
+			Target: validated.ValidatedActions[i].Target,
+			OK:     true,
+		}
+
+		if err := applyTicketCommentAction(ctx, client, validated.ValidatedActions[i], action); err != nil {
+			issue := applyErrorIssue(err)
+			applied.OK = false
+			applied.Issues = []validationIssue{issue}
+			result.OK = false
+			result.AppliedActions = append(result.AppliedActions, applied)
+			return errorEnvelopeMode("apply", command, prop, issue.Code, issue.Message, result)
+		}
+
+		result.AppliedActions = append(result.AppliedActions, applied)
+	}
+
+	result.OK = true
+	return successEnvelopeMode("apply", command, prop, result)
 }
 
 func runActionsValidate(ctx context.Context, client *api.Client, args []string) model.Envelope {
@@ -456,23 +483,69 @@ func actionTarget(action intentAction) map[string]any {
 	return target
 }
 
-func unsupportedAppliedActions(validated []validatedAction) []appliedActionStep {
+func unsupportedApplyPlan(validated []validatedAction) ([]appliedActionStep, bool) {
+	hasUnsupported := false
+	for _, action := range validated {
+		if strings.TrimSpace(action.Type) != actionTypeTicketComment {
+			hasUnsupported = true
+			break
+		}
+	}
+	if !hasUnsupported {
+		return nil, true
+	}
+
 	applied := make([]appliedActionStep, 0, len(validated))
 	for _, action := range validated {
+		issue := validationIssue{
+			Severity: "error",
+			Code:     "apply_aborted",
+			Message:  "action was not executed because the file includes unsupported confirmed apply action types",
+		}
+		if strings.TrimSpace(action.Type) != actionTypeTicketComment {
+			issue = validationIssue{
+				Severity: "error",
+				Code:     "unsupported_action_type",
+				Field:    "type",
+				Message:  fmt.Sprintf("action type %q is not enabled for apply yet", action.Type),
+			}
+		}
 		applied = append(applied, appliedActionStep{
 			Index:  action.Index,
 			Type:   action.Type,
 			Target: action.Target,
 			OK:     false,
-			Issues: []validationIssue{{
-				Severity: "error",
-				Code:     "unsupported_action_type",
-				Field:    "type",
-				Message:  fmt.Sprintf("action type %q is not enabled for apply yet", action.Type),
-			}},
+			Issues: []validationIssue{issue},
 		})
 	}
-	return applied
+	return applied, false
+}
+
+func applyTicketCommentAction(ctx context.Context, client *api.Client, validated validatedAction, action intentAction) error {
+	canonical := validated.CanonicalIdentifiers
+	project, _ := canonical["project"].(string)
+	tracker, _ := canonical["tracker"].(string)
+	threadID, _ := canonical["discussion_thread_id"].(string)
+
+	return client.CreateDiscussionPost(ctx, api.CreateDiscussionPostParams{
+		Project:  project,
+		Tracker:  tracker,
+		ThreadID: threadID,
+		Text:     action.Body,
+	})
+}
+
+func applyErrorIssue(err error) validationIssue {
+	code := "request_error"
+	if _, ok := err.(*api.APIError); ok {
+		code = "api_error"
+	}
+
+	return validationIssue{
+		Severity: "error",
+		Code:     code,
+		Message:  err.Error(),
+	}
 }
 
 func appendLabelsValidationIssues(validated *validatedAction, labels []string) {

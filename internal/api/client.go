@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -60,18 +61,25 @@ func NewClient(opts Options) (*Client, error) {
 }
 
 func (c *Client) NewRequest(ctx context.Context, method string, endpointPath string, query url.Values) (*http.Request, error) {
+	return c.newRequest(ctx, method, endpointPath, query, nil, "")
+}
+
+func (c *Client) newRequest(ctx context.Context, method string, endpointPath string, query url.Values, body io.Reader, contentType string) (*http.Request, error) {
 	endpointURL := *c.baseURL
 	endpointURL.Path = path.Join(c.baseURL.Path, endpointPath)
 	if len(query) > 0 {
 		endpointURL.RawQuery = query.Encode()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, endpointURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, method, endpointURL.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 
 	req.Header.Set("Accept", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
@@ -89,6 +97,19 @@ func (c *Client) GetJSON(ctx context.Context, endpointPath string, query url.Val
 		return err
 	}
 
+	return c.doJSON(req, out)
+}
+
+func (c *Client) PostForm(ctx context.Context, endpointPath string, form url.Values, out any) error {
+	req, err := c.newRequest(ctx, http.MethodPost, endpointPath, nil, strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return err
+	}
+
+	return c.doJSON(req, out)
+}
+
+func (c *Client) doJSON(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("perform request: %w", err)

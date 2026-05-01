@@ -266,13 +266,13 @@ Pagination ordering and continuity rules:
 
 `actions validate` reads a JSON file with an `actions` array and returns machine-readable validation results in `result.ok` and `result.validated_actions`. Each `validated_actions` entry preserves the existing validation summary fields and now also includes normalized supported action data in `action` plus resolved canonical identifiers in `canonical_identifiers` when available. Invalid actions still report per-action `issues` so automation can repair and retry selectively. Supported dry-run intents today are `ticket_create`, `ticket_labels`, and `ticket_comment`. The current `ticket_create` slice validates the SourceForge-documented tracker-create inputs for `summary`, optional `description`, and optional `labels`; it requires a non-empty summary and rejects labels containing commas because SourceForge's write API accepts labels as a comma-separated `ticket_form.labels` field. For now it does not model `status`, `assigned_to`, `private`, `discussion_disabled`, or `custom_fields`. The current `ticket_labels` slice validates replacement-style label updates only with the same comma restriction. `ticket_comment` currently validates the SourceForge-documented new-post flow for an existing ticket discussion thread: a non-empty body on an existing ticket with discussion enabled and a resolvable `discussion_thread._id`. Reply-post intents are not modeled yet, so `ticket_comment` is intentionally limited to new top-level discussion posts.
 
-`actions apply` now provides the shared apply scaffold for later write rollouts. Without `--confirm`, it stays in `mode: "dry_run"` and returns the same validated action records plus apply-stage metadata so automation can preview a future write run safely. With `--confirm`, validation still runs first, bearer authentication is required via `--token` or `SF_BEARER_TOKEN`, and the current release still rejects all write action types because no mutating handlers are enabled yet.
+`actions apply` now provides the shared apply scaffold for write rollouts. Without `--confirm`, it stays in `mode: "dry_run"` and returns the same validated action records plus apply-stage metadata so automation can preview a future write run safely. With `--confirm`, validation still runs first, bearer authentication is required via `--token` or `SF_BEARER_TOKEN`, confirmed execution is enabled for `ticket_comment` only, and `ticket_labels` plus `ticket_create` still return structured unsupported-action results. Mixed files are rejected before any write request is sent.
 
 ## Scope And Limits
 
 Current scope:
 - SourceForge Allura REST read-only workflows
-- apply dry-run and confirmation safety scaffolding for future write support
+- apply dry-run and confirmation safety scaffolding plus confirmed `ticket_comment` writes
 - JSON envelope output for normal command execution
 - best-effort tracker schema metadata when upstream data is partial or inconsistent
 

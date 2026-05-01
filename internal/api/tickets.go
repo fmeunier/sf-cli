@@ -71,6 +71,13 @@ type GetDiscussionThreadParams struct {
 	ThreadID string
 }
 
+type CreateDiscussionPostParams struct {
+	Project  string
+	Tracker  string
+	ThreadID string
+	Text     string
+}
+
 type TicketDetailResponse struct {
 	Ticket Ticket `json:"ticket"`
 }
@@ -218,6 +225,18 @@ func (c *Client) GetDiscussionThreadComments(ctx context.Context, params GetDisc
 	}
 
 	return normalizeComments(raw.Thread), nil
+}
+
+func (c *Client) CreateDiscussionPost(ctx context.Context, params CreateDiscussionPostParams) error {
+	form := url.Values{}
+	form.Set("text", params.Text)
+
+	threadPath := fmt.Sprintf("%s/_discuss/thread/%s/new", trackerPath(params.Project, params.Tracker), params.ThreadID)
+	if err := c.PostForm(ctx, threadPath, form, nil); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func normalizeComments(thread rawDiscussionThread) TicketCommentsResponse {

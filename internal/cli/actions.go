@@ -14,10 +14,8 @@ import (
 )
 
 const (
-	actionTypeTicketComment  = "ticket_comment"
-	actionTypeTicketLabels   = "ticket_labels"
-	commentBodyWarnLength    = 4000
-	commentBodyMaximumLength = 65536
+	actionTypeTicketComment = "ticket_comment"
+	actionTypeTicketLabels  = "ticket_labels"
 )
 
 type actionsValidateConfig struct {
@@ -196,13 +194,6 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		if bodyLength == 0 {
 			validated.OK = false
 			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "empty_body", Field: "body", Message: "body must not be empty"})
-		} else {
-			if bodyLength > commentBodyMaximumLength {
-				validated.OK = false
-				validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "body_too_long", Field: "body", Message: fmt.Sprintf("body must be <= %d characters", commentBodyMaximumLength)})
-			} else if bodyLength > commentBodyWarnLength {
-				validated.Issues = append(validated.Issues, validationIssue{Severity: "warning", Code: "body_long", Field: "body", Message: fmt.Sprintf("body is longer than %d characters", commentBodyWarnLength)})
-			}
 		}
 	case actionTypeTicketLabels:
 		if len(action.Labels) == 0 {
@@ -257,6 +248,17 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 	validated.CanonicalIdentifiers = ticketCommentCanonicalIdentifiers(project.Shortname, trimmedTracker, ticket.Ticket.TicketNum, ticket.Ticket.DiscussionThread.ID)
 	if trimmedType == actionTypeTicketLabels {
 		validated.CanonicalIdentifiers = ticketLabelsCanonicalIdentifiers(project.Shortname, trimmedTracker, ticket.Ticket.TicketNum)
+	} else {
+		if ticket.Ticket.DiscussionDisabled {
+			validated.OK = false
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "ticket_discussion_disabled", Field: "ticket", Message: fmt.Sprintf("ticket %d does not accept discussion posts", action.Ticket)})
+			return validated, nil
+		}
+		if strings.TrimSpace(ticket.Ticket.DiscussionThread.ID) == "" {
+			validated.OK = false
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "discussion_thread_unavailable", Field: "ticket", Message: fmt.Sprintf("ticket %d does not expose a discussion thread id for posting comments", action.Ticket)})
+			return validated, nil
+		}
 	}
 
 	return validated, nil

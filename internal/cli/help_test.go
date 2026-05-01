@@ -73,6 +73,8 @@ func TestActionsValidateHelpIncludesInputAndOutputContract(t *testing.T) {
 		"Expected input shape:",
 		"ticket_labels",
 		"Current ticket_labels scope:",
+		"Current ticket_comment scope:",
+		"reply posts are not modeled",
 		"Validation output:",
 		"Per-action result fields:",
 		"canonical_identifiers",

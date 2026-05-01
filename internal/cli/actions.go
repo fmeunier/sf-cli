@@ -15,6 +15,7 @@ import (
 
 const (
 	actionTypeTicketComment  = "ticket_comment"
+	actionTypeTicketLabels   = "ticket_labels"
 	commentBodyWarnLength    = 4000
 	commentBodyMaximumLength = 65536
 )
@@ -28,11 +29,12 @@ type actionsFile struct {
 }
 
 type intentAction struct {
-	Type    string `json:"type"`
-	Project string `json:"project"`
-	Tracker string `json:"tracker"`
-	Ticket  int    `json:"ticket"`
-	Body    string `json:"body"`
+	Type    string   `json:"type"`
+	Project string   `json:"project"`
+	Tracker string   `json:"tracker"`
+	Ticket  int      `json:"ticket"`
+	Body    string   `json:"body"`
+	Labels  []string `json:"labels"`
 }
 
 type actionsValidateResult struct {
@@ -159,8 +161,12 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		validated.Action = normalizeTicketCommentAction(action)
 		validated.CanonicalIdentifiers = ticketCommentCanonicalIdentifiers(trimmedProject, trimmedTracker, action.Ticket, "")
 	}
+	if trimmedType == actionTypeTicketLabels {
+		validated.Action = normalizeTicketLabelsAction(action)
+		validated.CanonicalIdentifiers = ticketLabelsCanonicalIdentifiers(trimmedProject, trimmedTracker, action.Ticket)
+	}
 
-	if trimmedType != actionTypeTicketComment {
+	if trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{
 			Severity: "error",
@@ -184,16 +190,38 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "invalid_ticket", Field: "ticket", Message: "ticket must be > 0"})
 	}
 
-	bodyLength := len(strings.TrimSpace(action.Body))
-	if bodyLength == 0 {
-		validated.OK = false
-		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "empty_body", Field: "body", Message: "body must not be empty"})
-	} else {
-		if bodyLength > commentBodyMaximumLength {
+	switch trimmedType {
+	case actionTypeTicketComment:
+		bodyLength := len(strings.TrimSpace(action.Body))
+		if bodyLength == 0 {
 			validated.OK = false
-			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "body_too_long", Field: "body", Message: fmt.Sprintf("body must be <= %d characters", commentBodyMaximumLength)})
-		} else if bodyLength > commentBodyWarnLength {
-			validated.Issues = append(validated.Issues, validationIssue{Severity: "warning", Code: "body_long", Field: "body", Message: fmt.Sprintf("body is longer than %d characters", commentBodyWarnLength)})
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "empty_body", Field: "body", Message: "body must not be empty"})
+		} else {
+			if bodyLength > commentBodyMaximumLength {
+				validated.OK = false
+				validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "body_too_long", Field: "body", Message: fmt.Sprintf("body must be <= %d characters", commentBodyMaximumLength)})
+			} else if bodyLength > commentBodyWarnLength {
+				validated.Issues = append(validated.Issues, validationIssue{Severity: "warning", Code: "body_long", Field: "body", Message: fmt.Sprintf("body is longer than %d characters", commentBodyWarnLength)})
+			}
+		}
+	case actionTypeTicketLabels:
+		if len(action.Labels) == 0 {
+			validated.OK = false
+			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "missing_labels", Field: "labels", Message: "labels must contain at least one value"})
+			break
+		}
+		for i, label := range action.Labels {
+			trimmedLabel := strings.TrimSpace(label)
+			field := fmt.Sprintf("labels[%d]", i)
+			if trimmedLabel == "" {
+				validated.OK = false
+				validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "empty_label", Field: field, Message: "labels must not contain empty values"})
+				continue
+			}
+			if strings.Contains(trimmedLabel, ",") {
+				validated.OK = false
+				validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_label_value", Field: field, Message: "labels must not contain commas"})
+			}
 		}
 	}
 
@@ -227,6 +255,9 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 		return validatedAction{}, err
 	}
 	validated.CanonicalIdentifiers = ticketCommentCanonicalIdentifiers(project.Shortname, trimmedTracker, ticket.Ticket.TicketNum, ticket.Ticket.DiscussionThread.ID)
+	if trimmedType == actionTypeTicketLabels {
+		validated.CanonicalIdentifiers = ticketLabelsCanonicalIdentifiers(project.Shortname, trimmedTracker, ticket.Ticket.TicketNum)
+	}
 
 	return validated, nil
 }
@@ -241,6 +272,25 @@ func normalizeTicketCommentAction(action intentAction) map[string]any {
 		},
 		"inputs": map[string]any{
 			"body": action.Body,
+		},
+	}
+}
+
+func normalizeTicketLabelsAction(action intentAction) map[string]any {
+	labels := make([]string, 0, len(action.Labels))
+	for _, label := range action.Labels {
+		labels = append(labels, strings.TrimSpace(label))
+	}
+
+	return map[string]any{
+		"type": actionTypeTicketLabels,
+		"target": map[string]any{
+			"project": strings.TrimSpace(action.Project),
+			"tracker": strings.TrimSpace(action.Tracker),
+			"ticket":  action.Ticket,
+		},
+		"inputs": map[string]any{
+			"labels": labels,
 		},
 	}
 }
@@ -263,6 +313,10 @@ func ticketCommentCanonicalIdentifiers(project string, tracker string, ticket in
 		return nil
 	}
 	return canonical
+}
+
+func ticketLabelsCanonicalIdentifiers(project string, tracker string, ticket int) map[string]any {
+	return ticketCommentCanonicalIdentifiers(project, tracker, ticket, "")
 }
 
 func projectHasTracker(tools []api.ProjectTool, tracker string) bool {

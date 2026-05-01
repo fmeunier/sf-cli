@@ -138,7 +138,7 @@ Agent guidance:
   - Use 'project tools' to discover valid tracker mount points for a project.
   - Use 'tracker schema' to inspect tracker fields before generating queries or
     write intents.
-  - Use 'actions validate' before proposing or applying ticket-comment writes.
+  - Use 'actions validate' before proposing or applying ticket label or comment writes.
   - Cursors are opaque. Reuse the returned token exactly as provided.
   - This CLI is read-only except for dry-run validation; it does not post
     comments or mutate SourceForge state.
@@ -168,7 +168,9 @@ Common workflows:
 
 Current write-intent support:
   - 'actions validate' accepts a JSON file containing an 'actions' array.
-  - The first supported action type is 'ticket_comment'.
+  - Supported action types today are 'ticket_labels' and 'ticket_comment'.
+  - 'ticket_labels' validates replacement-style label updates with one or more
+    non-empty labels that do not contain commas.
   - Validation reports per-action ok state, structured issues, normalized action
     data, and canonical identifiers when resolution succeeds.
 
@@ -182,11 +184,11 @@ Examples:
 }
 
 func actionsUsage() string {
-	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. It does not post or\n  modify SourceForge data. Today the supported action type is `ticket_comment`.\n\nExample:\n  sf actions validate actions.json\n"
+	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. It does not post or\n  modify SourceForge data. Today the supported action types are `ticket_labels`\n  and `ticket_comment`. `ticket_labels` currently validates replacement-style\n  label updates only.\n\nExample:\n  sf actions validate actions.json\n"
 }
 
 func actionsValidateUsage() string {
-	return "Usage:\n  sf actions validate ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nExpected input shape:\n  {\n    \"actions\": [\n      {\n        \"type\": \"ticket_comment\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"body\": \"comment text\"\n      }\n    ]\n  }\n\nValidation output:\n  result.ok                 Overall validation success across all actions\n  result.validated_actions  Per-action validation results\n\nPer-action result fields:\n  index                  Input position in the actions array\n  type                   Original action type\n  target                 Original target fields\n  action                 Normalized supported action data\n  canonical_identifiers  Resolved canonical identifiers when available\n  ok                     Action-specific validation success\n  issues                 Structured warnings and errors\n"
+	return "Usage:\n  sf actions validate ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nSupported action types today:\n  ticket_labels   Replace the ticket label set with a validated labels array\n  ticket_comment  Validate a ticket comment body and target ticket\n\nExpected input shape:\n  {\n    \"actions\": [\n      {\n        \"type\": \"ticket_labels\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"labels\": [\"triaged\", \"needs-review\"]\n      },\n      {\n        \"type\": \"ticket_comment\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"body\": \"comment text\"\n      }\n    ]\n  }\n\nCurrent ticket_labels scope:\n  - validates replacement-style label updates only\n  - requires one or more non-empty labels\n  - rejects labels containing commas because the SourceForge write API uses a\n    comma-separated `ticket_form.labels` field\n\nValidation output:\n  result.ok                 Overall validation success across all actions\n  result.validated_actions  Per-action validation results\n\nPer-action result fields:\n  index                  Input position in the actions array\n  type                   Original action type\n  target                 Original target fields\n  action                 Normalized supported action data\n  canonical_identifiers  Resolved canonical identifiers when available\n  ok                     Action-specific validation success\n  issues                 Structured warnings and errors\n"
 }
 
 func ticketsUsage() string {

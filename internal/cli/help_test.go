@@ -27,7 +27,7 @@ func TestRootHelpIncludesAgentGuidance(t *testing.T) {
 		"Output contract:",
 		"Agent guidance:",
 		"Command map:",
-		"sf is a SourceForge-focused CLI for coding agents.",
+		"sf is a SourceForge CLI for discovering project and tracker metadata, reading",
 		"Start by choosing the smallest command that answers the question:",
 		"Root help is an index; subcommand help is the source of truth for exact",
 		"Review recently active tickets:",

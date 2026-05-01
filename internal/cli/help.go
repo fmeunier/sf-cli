@@ -104,9 +104,9 @@ func rootUsage() string {
   sf [--base-url URL] [--token TOKEN] <command> [args]
 
 Purpose:
-	  sf is a SourceForge-focused CLI for coding agents. Use it to discover project
-	  and tracker metadata, read tracker tickets through stable JSON envelopes, and
-	  dry-run validate write intents before proposing external mutations.
+	  sf is a SourceForge CLI for discovering project and tracker metadata, reading
+	  tracker tickets through stable JSON envelopes, and dry-run validating write
+	  intents before proposing external mutations.
 
 Commands:
   tickets      List, search, inspect, and comment-read tracker tickets

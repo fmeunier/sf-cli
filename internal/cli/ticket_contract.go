@@ -12,6 +12,13 @@ const (
 // tickets list/search/get when callers do not request a compact --fields
 // projection.
 //
+// Naming decision:
+//   - Canonical ticket payloads keep SourceForge-native field names such as
+//     ticket_num, summary, created_date, and mod_date.
+//   - Compact --fields projections may expose shorter aliases such as id,
+//     title, created_at, and updated_at, but those are projection-only names
+//     and do not redefine the canonical schema.
+//
 // Compatibility rules:
 //   - Preserve existing field names, meanings, and nullability.
 //   - Additive changes must start as optional fields.

@@ -209,6 +209,11 @@ Warnings are reported at the top-level `warnings` field so callers do not need t
 
 For ticket reads, collection commands return ticket objects in `result.tickets`, while the detail command returns one ticket object in `result.ticket`.
 
+Naming decision:
+- Canonical ticket payloads remain SourceForge-native. When a command returns the full ticket schema without `--fields`, names like `ticket_num`, `summary`, `created_date`, and `mod_date` are the stable contract.
+- Shorter names like `id`, `title`, `created_at`, and `updated_at` are compact projection aliases for `--fields` responses only. They are convenience names, not a second canonical schema.
+- Any future move to normalized names as the canonical ticket schema would be a breaking contract change and should ship as an explicit follow-up, not as a silent rename.
+
 The canonical ticket contract is:
 - `tickets list` and `tickets search` always return `ticket_num`, `summary`, and `status`.
 - `tickets list` and `tickets search` may also return `reported_by`, `assigned_to`, `labels`, `created_date`, and `mod_date` when SourceForge provides meaningful values.
@@ -220,6 +225,7 @@ The canonical ticket contract is:
 The canonical identifier contract is:
 - `ticket_num` is the canonical ticket identifier across `tickets list`, `tickets search`, `tickets get`, and `tickets activity`.
 - When callers request compact ticket projections with `--fields`, the alias `id` is the same logical identifier as `ticket_num`; it is not a separate ID namespace.
+- Likewise, `title`, `created_at`, and `updated_at` are aliases for canonical `summary`, `created_date`, and `mod_date` in compact projections only.
 - `tickets comments` is correlated to a ticket by the requested ticket number plus the normalized thread object in `result.thread`. `result.thread.id` is the normalized discussion-thread identifier for that ticket's comments surface.
 - Comment `id` values identify comments within the discussion thread. They are not ticket IDs and must not be joined to `ticket_num`.
 - Provider-specific thread identifiers such as `discussion_thread._id` and `discussion_thread.discussion_id` are secondary identifiers for the discussion surface, not replacements for the canonical ticket identifier.

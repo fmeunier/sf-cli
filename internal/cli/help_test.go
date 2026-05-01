@@ -29,6 +29,7 @@ func TestRootHelpIncludesAgentGuidance(t *testing.T) {
 		"Review recently active tickets:",
 		"sf tickets activity --project fuse-emulator --tracker bugs",
 		"Use 'actions validate' before proposing or applying ticket create, label, or",
+		"Canonical ticket payloads use SourceForge-native field names; compact",
 		"Current write-intent support:",
 		"Supported action types today are 'ticket_create', 'ticket_labels', and",
 	} {

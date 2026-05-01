@@ -140,6 +140,8 @@ Agent guidance:
     write intents.
   - Use 'actions validate' before proposing or applying ticket create, label, or
     comment writes.
+  - Canonical ticket payloads use SourceForge-native field names; compact
+    --fields projections may use aliases such as 'id' and 'title'.
   - Cursors are opaque. Reuse the returned token exactly as provided.
   - This CLI is read-only except for dry-run validation; it does not post
     comments or mutate SourceForge state.

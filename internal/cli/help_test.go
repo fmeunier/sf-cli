@@ -26,9 +26,14 @@ func TestRootHelpIncludesAgentGuidance(t *testing.T) {
 		"Purpose:",
 		"Output contract:",
 		"Agent guidance:",
+		"Command map:",
+		"sf is a SourceForge-focused CLI for coding agents.",
+		"Start by choosing the smallest command that answers the question:",
+		"Root help is an index; subcommand help is the source of truth for exact",
 		"Review recently active tickets:",
 		"sf tickets activity --project fuse-emulator --tracker bugs",
-		"Use 'actions validate' before proposing or applying ticket create, label, or",
+		"Use 'actions validate' before proposing or applying ticket create, label,",
+		"or comment writes.",
 		"Canonical ticket payloads use SourceForge-native field names; compact",
 		"Current write-intent support:",
 		"Supported action types today are 'ticket_create', 'ticket_labels', and",
@@ -84,6 +89,37 @@ func TestActionsValidateHelpIncludesInputAndOutputContract(t *testing.T) {
 	} {
 		if !bytes.Contains([]byte(help), []byte(want)) {
 			t.Fatalf("actions validate help missing %q", want)
+		}
+	}
+}
+
+func TestTicketsSearchHelpIncludesSupportedFields(t *testing.T) {
+	t.Parallel()
+
+	help := ticketsSearchUsage()
+	for _, want := range []string{
+		"Supported --fields values:",
+		"id,title,status,reported_by,assigned_to,labels,created_at,updated_at",
+		"Result shape:",
+		"sort and filter_choices",
+	} {
+		if !bytes.Contains([]byte(help), []byte(want)) {
+			t.Fatalf("tickets search help missing %q", want)
+		}
+	}
+}
+
+func TestTrackerSchemaHelpIncludesSupportedFields(t *testing.T) {
+	t.Parallel()
+
+	help := trackerSchemaUsage()
+	for _, want := range []string{
+		"Supported --fields values:",
+		"project,tracker,options,milestones,saved_bins,fields",
+		"Warnings may",
+	} {
+		if !bytes.Contains([]byte(help), []byte(want)) {
+			t.Fatalf("tracker schema help missing %q", want)
 		}
 	}
 }

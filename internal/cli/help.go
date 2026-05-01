@@ -104,9 +104,9 @@ func rootUsage() string {
   sf [--base-url URL] [--token TOKEN] <command> [args]
 
 Purpose:
-  sf is a SourceForge-focused CLI for machine-readable read workflows plus dry-run
-  validation of write intents. Prefer this CLI when an agent needs stable JSON
-  envelopes instead of scraping HTML or ad-hoc text.
+	  sf is a SourceForge-focused CLI for coding agents. Use it to discover project
+	  and tracker metadata, read tracker tickets through stable JSON envelopes, and
+	  dry-run validate write intents before proposing external mutations.
 
 Commands:
   tickets      List, search, inspect, and comment-read tracker tickets
@@ -133,18 +133,56 @@ Output contract:
   4. Treat proposal and warnings as supplemental metadata
 
 Agent guidance:
+	  Start by choosing the smallest command that answers the question:
+	  - Use 'project tools' to discover tracker mount points for a project.
+	  - Use 'tickets list' for pagination over a tracker without a search query.
+	  - Use 'tickets search' when you need a SourceForge query such as
+	    'status:open' or label filters.
+	  - Use 'tickets activity' to review the most recently updated tickets. It
+	    defaults to open tickets and accepts '--all' to include closed tickets.
+	  - Use 'tickets get' for one ticket record and 'tickets comments' for the
+	    discussion thread.
+	  - Use 'tracker schema' before generating filters, field mappings, or
+	    write-intent payloads.
+	  - Use 'actions validate' before proposing or applying ticket create, label,
+	    or comment writes.
+	
   - Prefer explicit --project and --tracker flags instead of assuming defaults.
   - Use 'sf help <command>' before a new workflow to inspect required flags.
-  - Use 'project tools' to discover valid tracker mount points for a project.
-  - Use 'tracker schema' to inspect tracker fields before generating queries or
-    write intents.
-  - Use 'actions validate' before proposing or applying ticket create, label, or
-    comment writes.
+	  - Root help is an index; subcommand help is the source of truth for exact
+	    flags, supported '--fields' values, and result shape.
   - Canonical ticket payloads use SourceForge-native field names; compact
-    --fields projections may use aliases such as 'id' and 'title'.
-  - Cursors are opaque. Reuse the returned token exactly as provided.
+	    --fields projections may use aliases such as 'id' and 'title'.
+	  - Cursors are opaque numeric tokens. Reuse the returned value exactly as
+	    provided in 'result.pagination.next'.
   - This CLI is read-only except for dry-run validation; it does not post
-    comments or mutate SourceForge state.
+	    comments or mutate SourceForge state.
+
+Command map:
+  sf project tools
+    Discover available project tools and tracker mount points.
+
+  sf tickets list
+    Enumerate tickets in a tracker.
+
+  sf tickets search
+    Run a SourceForge ticket query against one tracker.
+
+  sf tickets activity
+    List most recently updated tickets, open-only by default.
+
+  sf tickets get
+    Fetch one ticket with the canonical detail shape.
+
+  sf tickets comments
+    Fetch the ticket discussion thread and comments.
+
+  sf tracker schema
+    Fetch best-effort schema sections: project, tracker, options, milestones,
+    saved_bins, and fields.
+
+  sf actions validate
+    Validate an actions JSON file for supported dry-run write intents.
 
 Common workflows:
   Discover project tools:
@@ -193,7 +231,7 @@ Examples:
 }
 
 func actionsUsage() string {
-	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. It does not post or\n  modify SourceForge data. Today the supported action types are `ticket_create`,\n  `ticket_labels`, and `ticket_comment`. `ticket_create` currently validates\n  summary, description, and labels only. `ticket_labels` currently validates\n  replacement-style label updates only. `ticket_comment` currently validates new\n  top-level discussion posts on existing tickets with discussion enabled.\n\nExample:\n  sf actions validate actions.json\n"
+	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. It does not post or\n  modify SourceForge data. Today the supported action types are `ticket_create`,\n  `ticket_labels`, and `ticket_comment`. `ticket_create` currently validates\n  summary, description, and labels only. `ticket_labels` currently validates\n  replacement-style label updates only. `ticket_comment` currently validates new\n  top-level discussion posts on existing tickets with discussion enabled.\n  See `sf help actions validate` for the exact input shape, normalized output,\n  and unsupported fields.\n\nExample:\n  sf actions validate actions.json\n"
 }
 
 func actionsValidateUsage() string {
@@ -201,23 +239,27 @@ func actionsValidateUsage() string {
 }
 
 func ticketsUsage() string {
-	return "Usage:\n  sf tickets <subcommand> [args]\n\nSubcommands:\n  list        List tickets in a tracker\n  search      Search tracker tickets with a query\n  activity    Show most recently active open tickets in a tracker\n  get         Fetch a single ticket\n  comments    Fetch comments for a ticket\n\nExamples:\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'\n  sf tickets activity --project fuse-emulator --tracker bugs\n  sf tickets activity --project fuse-emulator --tracker bugs --all\n  sf tickets get --project fuse-emulator --tracker bugs --ticket 42\n  sf tickets comments --project fuse-emulator --tracker bugs --ticket 42\n"
+	return "Usage:\n  sf tickets <subcommand> [args]\n\nSubcommands:\n  list        List tickets in a tracker\n  search      Search tracker tickets with a query\n  activity    Show most recently active open tickets in a tracker\n  get         Fetch a single ticket\n  comments    Fetch comments for a ticket\n\nSelection guide:\n  list        Browse tracker pages without a query\n  search      Use when you need a SourceForge query string\n  activity    Review recently updated tickets; add --all for closed tickets too\n  get         Fetch one ticket record\n  comments    Fetch a ticket discussion thread\n\nExamples:\n  sf tickets list --project fuse-emulator --tracker bugs\n  sf tickets search --project fuse-emulator --tracker bugs --query 'status:open'\n  sf tickets activity --project fuse-emulator --tracker bugs\n  sf tickets activity --project fuse-emulator --tracker bugs --all\n  sf tickets get --project fuse-emulator --tracker bugs --ticket 42\n  sf tickets comments --project fuse-emulator --tracker bugs --ticket 42\n"
 }
 
 func ticketsListUsage(command string) string {
-	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N] [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned item\n"
+	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N] [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned item\n\nSupported --fields values:\n  id,title,status,reported_by,assigned_to,labels,created_at,updated_at\n\nResult shape:\n  Default output returns canonical ticket objects under result.tickets. When\n  --fields is provided, each item only contains the requested compact fields.\n"
 }
 
 func ticketsSearchUsage() string {
-	return "Usage:\n  sf tickets search --project PROJECT --tracker TRACKER --query QUERY [--cursor TOKEN] [--limit N] [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --query QUERY      Ticket search query\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned ticket\n"
+	return "Usage:\n  sf tickets search --project PROJECT --tracker TRACKER --query QUERY [--cursor TOKEN] [--limit N] [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --query QUERY      Ticket search query\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned ticket\n\nSupported --fields values:\n  id,title,status,reported_by,assigned_to,labels,created_at,updated_at\n\nResult shape:\n  The result includes tickets, count, limit, pagination, and may also include\n  sort and filter_choices when SourceForge returns them.\n"
 }
 
 func ticketsActivityUsage() string {
-	return "Usage:\n  sf tickets activity --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N] [--fields LIST] [--all]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned item\n  --all              Include closed issues; default is open issues only\n"
+	return "Usage:\n  sf tickets activity --project PROJECT --tracker TRACKER [--cursor TOKEN] [--limit N] [--fields LIST] [--all]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --cursor TOKEN     Opaque cursor returned by a previous response\n  --limit N          Page size (default 25)\n  --fields LIST      Comma-separated compact fields for each returned item\n  --all              Include closed issues; default is open issues only\n\nSupported --fields values:\n  id,title,status,updated_at,last_comment_at,last_comment_author\n\nResult shape:\n  Returns a tickets list sorted by most recent update first. The default output\n  contains activity-specific ticket objects under result.tickets.\n"
 }
 
 func ticketsGetUsage(command string) string {
-	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER --ticket NUMBER [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --ticket NUMBER    Ticket number\n  --fields LIST      Comma-separated compact fields for the returned item\n"
+	fields := "id,title,description,status,reported_by,assigned_to,labels,private,discussion_disabled,custom_fields,attachments,related_artifacts,created_at,updated_at"
+	if command == "tickets comments" {
+		fields = "id,author,body,created_at,edited_at,subject,type,is_meta,attachments"
+	}
+	return "Usage:\n  sf " + command + " --project PROJECT --tracker TRACKER --ticket NUMBER [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --ticket NUMBER    Ticket number\n  --fields LIST      Comma-separated compact fields for the returned item\n\nSupported --fields values:\n  " + fields + "\n"
 }
 
 func projectUsage() string {
@@ -225,7 +267,7 @@ func projectUsage() string {
 }
 
 func projectToolsUsage() string {
-	return "Usage:\n  sf project tools --project PROJECT [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --fields LIST      Comma-separated compact fields for each returned tool\n"
+	return "Usage:\n  sf project tools --project PROJECT [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --fields LIST      Comma-separated compact fields for each returned tool\n\nSupported --fields values:\n  name,mount_point,mount_label,url,api_url,clone_url_https_anon,clone_url_ro\n\nResult shape:\n  Default output returns the full project payload, including its tools array.\n  With --fields, result.tools contains only the requested tool fields.\n"
 }
 
 func trackerUsage() string {
@@ -233,5 +275,5 @@ func trackerUsage() string {
 }
 
 func trackerSchemaUsage() string {
-	return "Usage:\n  sf tracker schema --project PROJECT --tracker TRACKER [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --fields LIST      Comma-separated top-level schema sections to return\n"
+	return "Usage:\n  sf tracker schema --project PROJECT --tracker TRACKER [--fields LIST]\n\nArguments:\n  --project PROJECT  SourceForge project shortname\n  --tracker TRACKER  Tracker mount point\n  --fields LIST      Comma-separated top-level schema sections to return\n\nSupported --fields values:\n  project,tracker,options,milestones,saved_bins,fields\n\nNotes:\n  This is best-effort metadata assembled from SourceForge responses. Warnings may\n  be returned alongside successful results when some schema sections are partial\n  or unavailable.\n"
 }

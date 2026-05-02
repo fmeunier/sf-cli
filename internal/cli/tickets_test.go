@@ -879,6 +879,39 @@ func TestTicketOutputsOmitEmptyOptionalFieldsPerCanonicalContract(t *testing.T) 
 	}
 }
 
+func TestTicketsListBackfillsMissingStatusFromTicketDetail(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/rest/p/test/tickets":
+			_, _ = w.Write([]byte(`{"tickets":[{"ticket_num":515,"summary":"Closed ticket","labels":["triaged"]}],"count":1,"page":0,"limit":25}`))
+		case "/rest/p/test/tickets/515":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":515,"summary":"Closed ticket","description":"details","status":"closed-accepted","labels":["triaged"],"private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-515"}}}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "tickets", "list", "--project", "test", "--tracker", "tickets", "--fields", "id,title,status,labels"}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	ticket := decodeEnvelope(t, stdout.Bytes()).Result.(map[string]any)["tickets"].([]any)[0].(map[string]any)
+	if ticket["status"] != "closed-accepted" {
+		t.Fatalf("ticket.status = %v, want %q", ticket["status"], "closed-accepted")
+	}
+	labels := ticket["labels"].([]any)
+	if len(labels) != 1 || labels[0] != "triaged" {
+		t.Fatalf("ticket.labels = %v, want %v", labels, []string{"triaged"})
+	}
+}
+
 func assertTicketMatchesCanonicalContract(t *testing.T, ticket map[string]any, command string) {
 	t.Helper()
 

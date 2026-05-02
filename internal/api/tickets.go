@@ -183,8 +183,29 @@ func (c *Client) ListTickets(ctx context.Context, params ListTicketsParams) (Tic
 	if err := c.GetJSON(ctx, trackerPath(params.Project, params.Tracker), paginationQuery(page, params.Limit), &out); err != nil {
 		return TicketListResponse{}, err
 	}
+	if err := c.backfillMissingTicketStatuses(ctx, params.Project, params.Tracker, out.Tickets); err != nil {
+		return TicketListResponse{}, err
+	}
 	out.Pagination = normalizePagination(page, out.Limit, out.Count, len(out.Tickets))
 	return out, nil
+}
+
+func (c *Client) backfillMissingTicketStatuses(ctx context.Context, project string, tracker string, tickets []Ticket) error {
+	for i := range tickets {
+		if strings.TrimSpace(tickets[i].Status) != "" || tickets[i].TicketNum <= 0 {
+			continue
+		}
+
+		// SourceForge's tracker list endpoint can omit status on some rows even
+		// when the ticket detail endpoint still reports it.
+		detail, err := c.GetTicket(ctx, GetTicketParams{Project: project, Tracker: tracker, TicketID: tickets[i].TicketNum})
+		if err != nil {
+			return err
+		}
+		tickets[i].Status = detail.Ticket.Status
+	}
+
+	return nil
 }
 
 func (c *Client) SearchTickets(ctx context.Context, params SearchTicketsParams) (TicketSearchResponse, error) {

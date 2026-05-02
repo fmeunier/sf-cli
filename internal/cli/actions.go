@@ -315,7 +315,7 @@ func validateIntentAction(ctx context.Context, client *api.Client, index int, ac
 			validated.OK = false
 			validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_target", Field: "ticket", Message: "ticket must be omitted for ticket_create"})
 		}
-		appendUnsupportedTicketCreateFieldIssues(&validated, action)
+		appendTicketCreateFieldValidationIssues(&validated, action)
 		appendLabelsValidationIssues(&validated, action.Labels)
 	case actionTypeTicketComment:
 		bodyLength := len(strings.TrimSpace(action.Body))
@@ -399,9 +399,31 @@ func normalizeTicketCommentAction(action intentAction) map[string]any {
 }
 
 func normalizeTicketCreateAction(action intentAction) map[string]any {
-	inputs := map[string]any{"summary": strings.TrimSpace(action.Summary)}
+	inputs := map[string]any{
+		"summary": strings.TrimSpace(action.Summary),
+		"status":  normalizedTicketCreateStatus(action.Status),
+	}
+	if assignedTo := strings.TrimSpace(action.AssignedTo); assignedTo != "" {
+		inputs["assigned_to"] = assignedTo
+	}
+	if action.Private != nil {
+		inputs["private"] = *action.Private
+	}
 	if action.Description != "" {
 		inputs["description"] = action.Description
+	}
+	if len(action.CustomFields) != 0 {
+		customFields := make(map[string]any, len(action.CustomFields))
+		for key, value := range action.CustomFields {
+			trimmedKey := strings.TrimSpace(key)
+			if trimmedKey == "" {
+				continue
+			}
+			customFields[trimmedKey] = value
+		}
+		if len(customFields) != 0 {
+			inputs["custom_fields"] = customFields
+		}
 	}
 	if len(action.Labels) != 0 {
 		labels := make([]string, 0, len(action.Labels))
@@ -546,11 +568,15 @@ func applyTicketCreateAction(ctx context.Context, client *api.Client, validated 
 	description, _ := inputs["description"].(string)
 
 	return client.CreateTicket(ctx, api.CreateTicketParams{
-		Project:     project,
-		Tracker:     tracker,
-		Summary:     summary,
-		Description: description,
-		Labels:      actionInputStrings(inputs, "labels"),
+		Project:      project,
+		Tracker:      tracker,
+		Status:       actionInputString(inputs, "status"),
+		AssignedTo:   actionInputString(inputs, "assigned_to"),
+		Private:      actionInputBoolPointer(inputs, "private"),
+		Summary:      summary,
+		Description:  description,
+		CustomFields: actionInputMap(inputs, "custom_fields"),
+		Labels:       actionInputStrings(inputs, "labels"),
 	})
 }
 
@@ -603,6 +629,25 @@ func applyTicketLabelsAction(ctx context.Context, client *api.Client, validated 
 func actionInputs(validated validatedAction) map[string]any {
 	inputs, _ := validated.Action["inputs"].(map[string]any)
 	return inputs
+}
+
+func actionInputString(inputs map[string]any, key string) string {
+	value, _ := inputs[key].(string)
+	return value
+}
+
+func actionInputBoolPointer(inputs map[string]any, key string) *bool {
+	value, ok := inputs[key].(bool)
+	if !ok {
+		return nil
+	}
+	result := value
+	return &result
+}
+
+func actionInputMap(inputs map[string]any, key string) map[string]any {
+	value, _ := inputs[key].(map[string]any)
+	return value
 }
 
 func actionInputStrings(inputs map[string]any, key string) []string {
@@ -658,27 +703,19 @@ func appendLabelsValidationIssues(validated *validatedAction, labels []string) {
 	}
 }
 
-func appendUnsupportedTicketCreateFieldIssues(validated *validatedAction, action intentAction) {
-	if strings.TrimSpace(action.Status) != "" {
-		validated.OK = false
-		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "status", Message: "status is not supported for ticket_create"})
-	}
-	if strings.TrimSpace(action.AssignedTo) != "" {
-		validated.OK = false
-		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "assigned_to", Message: "assigned_to is not supported for ticket_create"})
-	}
-	if action.Private != nil {
-		validated.OK = false
-		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "private", Message: "private is not supported for ticket_create"})
-	}
+func appendTicketCreateFieldValidationIssues(validated *validatedAction, action intentAction) {
 	if action.DiscussionDisabled != nil {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "discussion_disabled", Message: "discussion_disabled is not supported for ticket_create"})
 	}
-	if len(action.CustomFields) != 0 {
-		validated.OK = false
-		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "custom_fields", Message: "custom_fields are not supported for ticket_create"})
+}
+
+func normalizedTicketCreateStatus(status string) string {
+	trimmed := strings.TrimSpace(status)
+	if trimmed == "" {
+		return "open"
 	}
+	return trimmed
 }
 
 func projectHasTracker(tools []api.ProjectTool, tracker string) bool {

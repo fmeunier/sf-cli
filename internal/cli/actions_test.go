@@ -30,7 +30,7 @@ func TestActionsValidateAcceptsValidTicketCreateIntent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","labels":[" triaged ","needs-review"]}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","assigned_to":"alice","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "validate", actionsPath}, stdout)
 	if status != 0 {
@@ -55,6 +55,19 @@ func TestActionsValidateAcceptsValidTicketCreateIntent(t *testing.T) {
 	inputs := normalized["inputs"].(map[string]any)
 	if inputs["summary"] != "New ticket" {
 		t.Fatalf("inputs.summary = %v, want %q", inputs["summary"], "New ticket")
+	}
+	if inputs["status"] != "open" {
+		t.Fatalf("inputs.status = %v, want %q", inputs["status"], "open")
+	}
+	if inputs["assigned_to"] != "alice" {
+		t.Fatalf("inputs.assigned_to = %v, want %q", inputs["assigned_to"], "alice")
+	}
+	if inputs["private"] != true {
+		t.Fatalf("inputs.private = %v, want true", inputs["private"])
+	}
+	customFields := inputs["custom_fields"].(map[string]any)
+	if customFields["_priority"] != "5" {
+		t.Fatalf("inputs.custom_fields._priority = %v, want %q", customFields["_priority"], "5")
 	}
 	labels := inputs["labels"].([]any)
 	if len(labels) != 2 || labels[0] != "triaged" || labels[1] != "needs-review" {
@@ -86,7 +99,7 @@ func TestActionsValidateRejectsUnsupportedTicketCreateFields(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","ticket":42,"summary":"New ticket","status":"open","assigned_to":"alice","private":true,"discussion_disabled":false,"custom_fields":{"_milestone":"v1"}}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","ticket":42,"summary":"New ticket","discussion_disabled":false}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "validate", actionsPath}, stdout)
 	if status != 0 {
@@ -110,7 +123,7 @@ func TestActionsValidateRejectsUnsupportedTicketCreateFields(t *testing.T) {
 		}
 		unsupportedFields[issue["field"].(string)] = true
 	}
-	for _, field := range []string{"status", "assigned_to", "private", "discussion_disabled", "custom_fields"} {
+	for _, field := range []string{"discussion_disabled"} {
 		if !unsupportedFields[field] {
 			t.Fatalf("unsupported fields = %v, want %q present", unsupportedFields, field)
 		}
@@ -549,7 +562,7 @@ func TestActionsApplyDryRunPreviewsTicketCreateWithoutExecution(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","labels":[" triaged ","needs-review"]}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","assigned_to":"alice","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "apply", actionsPath}, stdout)
 	if status != 0 {
@@ -577,6 +590,9 @@ func TestActionsApplyDryRunPreviewsTicketCreateWithoutExecution(t *testing.T) {
 	inputs := validated[0].(map[string]any)["action"].(map[string]any)["inputs"].(map[string]any)
 	if inputs["summary"] != "New ticket" {
 		t.Fatalf("inputs.summary = %v, want %q", inputs["summary"], "New ticket")
+	}
+	if inputs["status"] != "open" {
+		t.Fatalf("inputs.status = %v, want %q", inputs["status"], "open")
 	}
 	labels := inputs["labels"].([]any)
 	if len(labels) != 2 || labels[0] != "triaged" || labels[1] != "needs-review" {
@@ -755,8 +771,8 @@ func TestActionsApplyExecutesConfirmedTicketCreate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ReadAll() error = %v", err)
 			}
-			if got := string(body); got != "ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.summary=New+ticket" {
-				t.Fatalf("request body = %q, want %q", got, "ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.summary=New+ticket")
+			if got := string(body); got != "ticket_form.assigned_to=alice&ticket_form.custom_fields._priority=5&ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.private=on&ticket_form.status=open&ticket_form.summary=New+ticket" {
+				t.Fatalf("request body = %q, want %q", got, "ticket_form.assigned_to=alice&ticket_form.custom_fields._priority=5&ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.private=on&ticket_form.status=open&ticket_form.summary=New+ticket")
 			}
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		default:
@@ -765,7 +781,7 @@ func TestActionsApplyExecutesConfirmedTicketCreate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","labels":[" triaged ","needs-review"]}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","assigned_to":"alice","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "--token", "secret-token", "actions", "apply", "--confirm", actionsPath}, stdout)
 	if status != 0 {

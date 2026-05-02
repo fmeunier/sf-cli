@@ -86,11 +86,15 @@ type SaveTicketLabelsParams struct {
 }
 
 type CreateTicketParams struct {
-	Project     string
-	Tracker     string
-	Summary     string
-	Description string
-	Labels      []string
+	Project      string
+	Tracker      string
+	Status       string
+	AssignedTo   string
+	Private      *bool
+	Summary      string
+	Description  string
+	CustomFields map[string]any
+	Labels       []string
 }
 
 type TicketDetailResponse struct {
@@ -268,9 +272,24 @@ func (c *Client) SaveTicketLabels(ctx context.Context, params SaveTicketLabelsPa
 
 func (c *Client) CreateTicket(ctx context.Context, params CreateTicketParams) error {
 	form := url.Values{}
+	if params.Status != "" {
+		form.Set("ticket_form.status", params.Status)
+	}
+	if params.AssignedTo != "" {
+		form.Set("ticket_form.assigned_to", params.AssignedTo)
+	}
+	if params.Private != nil && *params.Private {
+		form.Set("ticket_form.private", "on")
+	}
 	form.Set("ticket_form.summary", params.Summary)
 	if params.Description != "" {
 		form.Set("ticket_form.description", params.Description)
+	}
+	for key, value := range params.CustomFields {
+		if strings.TrimSpace(key) == "" || value == nil {
+			continue
+		}
+		form.Set("ticket_form.custom_fields."+key, fmt.Sprint(value))
 	}
 	if len(params.Labels) != 0 {
 		form.Set("ticket_form.labels", strings.Join(params.Labels, ","))

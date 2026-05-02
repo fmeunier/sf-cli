@@ -78,6 +78,13 @@ type CreateDiscussionPostParams struct {
 	Text     string
 }
 
+type SaveTicketLabelsParams struct {
+	Project string
+	Tracker string
+	Ticket  int
+	Labels  []string
+}
+
 type TicketDetailResponse struct {
 	Ticket Ticket `json:"ticket"`
 }
@@ -233,6 +240,18 @@ func (c *Client) CreateDiscussionPost(ctx context.Context, params CreateDiscussi
 
 	threadPath := fmt.Sprintf("%s/_discuss/thread/%s/new", trackerPath(params.Project, params.Tracker), params.ThreadID)
 	if err := c.PostForm(ctx, threadPath, form, nil); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) SaveTicketLabels(ctx context.Context, params SaveTicketLabelsParams) error {
+	form := url.Values{}
+	form.Set("ticket_form.labels", strings.Join(params.Labels, ","))
+
+	ticketPath := fmt.Sprintf("%s/%d/save", trackerPath(params.Project, params.Tracker), params.Ticket)
+	if err := c.PostForm(ctx, ticketPath, form, nil); err != nil {
 		return err
 	}
 

@@ -484,6 +484,53 @@ func TestActionsApplyDefaultsToDryRunWithoutConfirm(t *testing.T) {
 	}
 }
 
+func TestActionsApplyDryRunPreviewsTicketLabelsWithoutExecution(t *testing.T) {
+	t.Parallel()
+
+	var saveRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test":
+			_, _ = w.Write([]byte(`{"shortname":"test","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs"}]}`))
+		case "/rest/p/test/bugs/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42"},"labels":["triaged"]}}`))
+		case "/rest/p/test/bugs/42/save":
+			saveRequests.Add(1)
+			t.Fatalf("ticket label save should not run during dry-run")
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_labels","project":"test","tracker":"bugs","ticket":42,"labels":["triaged","needs-review"]}]}`)
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "apply", actionsPath}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Mode != "dry_run" {
+		t.Fatalf("mode = %q, want %q", got.Mode, "dry_run")
+	}
+	result := got.Result.(map[string]any)
+	if result["confirmed"] != false {
+		t.Fatalf("result.confirmed = %v, want false", result["confirmed"])
+	}
+	if result["executed"] != false {
+		t.Fatalf("result.executed = %v, want false", result["executed"])
+	}
+	if saveRequests.Load() != 0 {
+		t.Fatalf("saveRequests = %d, want 0", saveRequests.Load())
+	}
+	validated := result["validated_actions"].([]any)
+	if validated[0].(map[string]any)["ok"] != true {
+		t.Fatalf("validated action ok = %v, want true", validated[0].(map[string]any)["ok"])
+	}
+}
+
 func TestActionsApplyRejectsInvalidActionsBeforeExecution(t *testing.T) {
 	t.Parallel()
 
@@ -640,14 +687,14 @@ func TestActionsApplyRequiresTokenForConfirmedWrites(t *testing.T) {
 		case "/rest/p/test":
 			_, _ = w.Write([]byte(`{"shortname":"test","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs"}]}`))
 		case "/rest/p/test/bugs/42":
-			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42"}}}`))
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42"},"labels":["triaged"]}}`))
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_comment","project":"test","tracker":"bugs","ticket":42,"body":"hello"}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_labels","project":"test","tracker":"bugs","ticket":42,"labels":["triaged","needs-review"]}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "apply", "--confirm", actionsPath}, stdout)
 	if status != 1 {
@@ -673,7 +720,76 @@ func TestActionsApplyRequiresTokenForConfirmedWrites(t *testing.T) {
 	}
 }
 
-func TestActionsApplyRejectsUnsupportedTicketLabelsWhenConfirmed(t *testing.T) {
+func TestActionsApplyExecutesConfirmedTicketLabels(t *testing.T) {
+	t.Parallel()
+
+	var saveRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test":
+			_, _ = w.Write([]byte(`{"shortname":"test","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs"}]}`))
+		case "/rest/p/test/bugs/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42"},"labels":["triaged"]}}`))
+		case "/rest/p/test/bugs/42/save":
+			saveRequests.Add(1)
+			if r.Method != http.MethodPost {
+				t.Fatalf("method = %q, want %q", r.Method, http.MethodPost)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer secret-token" {
+				t.Fatalf("Authorization header = %q, want %q", got, "Bearer secret-token")
+			}
+			if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/x-www-form-urlencoded") {
+				t.Fatalf("Content-Type = %q, want form encoding", got)
+			}
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("ReadAll() error = %v", err)
+			}
+			if got := string(body); got != "ticket_form.labels=triaged%2Cneeds-review" {
+				t.Fatalf("request body = %q, want %q", got, "ticket_form.labels=triaged%2Cneeds-review")
+			}
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_labels","project":"test","tracker":"bugs","ticket":42,"labels":["triaged","needs-review"]}]}`)
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "--token", "secret-token", "actions", "apply", "--confirm", actionsPath}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Mode != "apply" {
+		t.Fatalf("mode = %q, want %q", got.Mode, "apply")
+	}
+	if got.Error != nil {
+		t.Fatalf("error = %#v, want nil", got.Error)
+	}
+	result := got.Result.(map[string]any)
+	if result["executed"] != true {
+		t.Fatalf("result.executed = %v, want true", result["executed"])
+	}
+	applied := result["applied_actions"].([]any)
+	if len(applied) != 1 {
+		t.Fatalf("len(applied_actions) = %d, want 1", len(applied))
+	}
+	if applied[0].(map[string]any)["ok"] != true {
+		t.Fatalf("applied action ok = %v, want true", applied[0].(map[string]any)["ok"])
+	}
+	if _, ok := applied[0].(map[string]any)["issues"]; ok {
+		t.Fatalf("issues = %v, want omitted", applied[0].(map[string]any)["issues"])
+	}
+	if saveRequests.Load() != 1 {
+		t.Fatalf("saveRequests = %d, want 1", saveRequests.Load())
+	}
+}
+
+func TestActionsApplyReturnsAPIErrorWhenTicketLabelSaveFails(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -683,6 +799,9 @@ func TestActionsApplyRejectsUnsupportedTicketLabelsWhenConfirmed(t *testing.T) {
 			_, _ = w.Write([]byte(`{"shortname":"test","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs"}]}`))
 		case "/rest/p/test/bugs/42":
 			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42"},"labels":["triaged"]}}`))
+		case "/rest/p/test/bugs/42/save":
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`{"error":"upstream failed"}`))
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
@@ -697,24 +816,82 @@ func TestActionsApplyRejectsUnsupportedTicketLabelsWhenConfirmed(t *testing.T) {
 	}
 
 	got := decodeEnvelope(t, stdout.Bytes())
-	if got.Error == nil || got.Error.Code != "unsupported_action_type" {
-		t.Fatalf("error = %#v, want code %q", got.Error, "unsupported_action_type")
+	if got.Error == nil || got.Error.Code != "api_error" {
+		t.Fatalf("error = %#v, want code %q", got.Error, "api_error")
 	}
 	result := got.Result.(map[string]any)
-	if result["executed"] != false {
-		t.Fatalf("result.executed = %v, want false", result["executed"])
+	if result["executed"] != true {
+		t.Fatalf("result.executed = %v, want true", result["executed"])
 	}
 	applied := result["applied_actions"].([]any)
 	issues := applied[0].(map[string]any)["issues"].([]any)
-	if issues[0].(map[string]any)["code"] != "unsupported_action_type" {
-		t.Fatalf("issues[0].code = %v, want %q", issues[0].(map[string]any)["code"], "unsupported_action_type")
+	if issues[0].(map[string]any)["code"] != "api_error" {
+		t.Fatalf("issues[0].code = %v, want %q", issues[0].(map[string]any)["code"], "api_error")
 	}
 }
 
-func TestActionsApplyRejectsMixedActionFilesSafely(t *testing.T) {
+func TestActionsApplyExecutesMixedCommentAndLabelsFile(t *testing.T) {
 	t.Parallel()
 
 	var postRequests atomic.Int32
+	var saveRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/rest/p/test":
+			_, _ = w.Write([]byte(`{"shortname":"test","tools":[{"name":"tickets","mount_point":"bugs","mount_label":"Bugs"}]}`))
+		case "/rest/p/test/bugs/42":
+			_, _ = w.Write([]byte(`{"ticket":{"ticket_num":42,"summary":"Answer","status":"open","private":false,"discussion_disabled":false,"discussion_thread":{"_id":"thread-42"},"labels":["triaged"]}}`))
+		case "/rest/p/test/bugs/_discuss/thread/thread-42/new":
+			postRequests.Add(1)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/rest/p/test/bugs/42/save":
+			saveRequests.Add(1)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_comment","project":"test","tracker":"bugs","ticket":42,"body":"hello"},{"type":"ticket_labels","project":"test","tracker":"bugs","ticket":42,"labels":["triaged","needs-review"]}]}`)
+	stdout := &bytes.Buffer{}
+	status := Run([]string{"--base-url", server.URL + "/rest", "--token", "secret-token", "actions", "apply", "--confirm", actionsPath}, stdout)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; output=%s", status, stdout.String())
+	}
+
+	got := decodeEnvelope(t, stdout.Bytes())
+	if got.Mode != "apply" {
+		t.Fatalf("mode = %q, want %q", got.Mode, "apply")
+	}
+	if got.Error != nil {
+		t.Fatalf("error = %#v, want nil", got.Error)
+	}
+	result := got.Result.(map[string]any)
+	if result["executed"] != true {
+		t.Fatalf("result.executed = %v, want true", result["executed"])
+	}
+	applied := result["applied_actions"].([]any)
+	if len(applied) != 2 {
+		t.Fatalf("len(applied_actions) = %d, want 2", len(applied))
+	}
+	if applied[0].(map[string]any)["ok"] != true || applied[1].(map[string]any)["ok"] != true {
+		t.Fatalf("applied actions = %v, want both ok", applied)
+	}
+	if postRequests.Load() != 1 {
+		t.Fatalf("postRequests = %d, want 1", postRequests.Load())
+	}
+	if saveRequests.Load() != 1 {
+		t.Fatalf("saveRequests = %d, want 1", saveRequests.Load())
+	}
+}
+
+func TestActionsApplyRejectsMixedFilesContainingUnsupportedTypes(t *testing.T) {
+	t.Parallel()
+
+	var postRequests atomic.Int32
+	var saveRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -725,13 +902,16 @@ func TestActionsApplyRejectsMixedActionFilesSafely(t *testing.T) {
 		case "/rest/p/test/bugs/_discuss/thread/thread-42/new":
 			postRequests.Add(1)
 			t.Fatalf("comment post should not run when unsupported actions are present")
+		case "/rest/p/test/bugs/42/save":
+			saveRequests.Add(1)
+			t.Fatalf("ticket label save should not run when unsupported actions are present")
 		default:
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_comment","project":"test","tracker":"bugs","ticket":42,"body":"hello"},{"type":"ticket_labels","project":"test","tracker":"bugs","ticket":42,"labels":["triaged","needs-review"]}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_comment","project":"test","tracker":"bugs","ticket":42,"body":"hello"},{"type":"ticket_create","project":"test","tracker":"bugs","summary":"new ticket"}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "--token", "secret-token", "actions", "apply", "--confirm", actionsPath}, stdout)
 	if status != 1 {
@@ -757,6 +937,9 @@ func TestActionsApplyRejectsMixedActionFilesSafely(t *testing.T) {
 	}
 	if postRequests.Load() != 0 {
 		t.Fatalf("postRequests = %d, want 0", postRequests.Load())
+	}
+	if saveRequests.Load() != 0 {
+		t.Fatalf("saveRequests = %d, want 0", saveRequests.Load())
 	}
 }
 

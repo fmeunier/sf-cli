@@ -141,7 +141,7 @@ func runActionsApply(ctx context.Context, client *api.Client, args []string) mod
 	if applied, ok := unsupportedApplyPlan(validated.ValidatedActions); !ok {
 		result.OK = false
 		result.AppliedActions = applied
-		return errorEnvelopeMode("apply", command, prop, "unsupported_action_type", "confirmed apply currently supports only `ticket_comment` actions", result)
+		return errorEnvelopeMode("apply", command, prop, "unsupported_action_type", "confirmed apply currently supports `ticket_comment` and `ticket_labels` actions only", result)
 	}
 
 	result.AppliedActions = make([]appliedActionStep, 0, len(validated.ValidatedActions))
@@ -154,7 +154,7 @@ func runActionsApply(ctx context.Context, client *api.Client, args []string) mod
 			OK:     true,
 		}
 
-		if err := applyTicketCommentAction(ctx, client, validated.ValidatedActions[i], action); err != nil {
+		if err := applyConfirmedAction(ctx, client, validated.ValidatedActions[i], action); err != nil {
 			issue := applyErrorIssue(err)
 			applied.OK = false
 			applied.Issues = []validationIssue{issue}
@@ -486,7 +486,8 @@ func actionTarget(action intentAction) map[string]any {
 func unsupportedApplyPlan(validated []validatedAction) ([]appliedActionStep, bool) {
 	hasUnsupported := false
 	for _, action := range validated {
-		if strings.TrimSpace(action.Type) != actionTypeTicketComment {
+		trimmedType := strings.TrimSpace(action.Type)
+		if trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
 			hasUnsupported = true
 			break
 		}
@@ -502,7 +503,8 @@ func unsupportedApplyPlan(validated []validatedAction) ([]appliedActionStep, boo
 			Code:     "apply_aborted",
 			Message:  "action was not executed because the file includes unsupported confirmed apply action types",
 		}
-		if strings.TrimSpace(action.Type) != actionTypeTicketComment {
+		trimmedType := strings.TrimSpace(action.Type)
+		if trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
 			issue = validationIssue{
 				Severity: "error",
 				Code:     "unsupported_action_type",
@@ -521,6 +523,17 @@ func unsupportedApplyPlan(validated []validatedAction) ([]appliedActionStep, boo
 	return applied, false
 }
 
+func applyConfirmedAction(ctx context.Context, client *api.Client, validated validatedAction, action intentAction) error {
+	switch strings.TrimSpace(validated.Type) {
+	case actionTypeTicketComment:
+		return applyTicketCommentAction(ctx, client, validated, action)
+	case actionTypeTicketLabels:
+		return applyTicketLabelsAction(ctx, client, validated, action)
+	default:
+		return fmt.Errorf("unsupported confirmed action type %q", validated.Type)
+	}
+}
+
 func applyTicketCommentAction(ctx context.Context, client *api.Client, validated validatedAction, action intentAction) error {
 	canonical := validated.CanonicalIdentifiers
 	project, _ := canonical["project"].(string)
@@ -532,6 +545,30 @@ func applyTicketCommentAction(ctx context.Context, client *api.Client, validated
 		Tracker:  tracker,
 		ThreadID: threadID,
 		Text:     action.Body,
+	})
+}
+
+func applyTicketLabelsAction(ctx context.Context, client *api.Client, validated validatedAction, action intentAction) error {
+	canonical := validated.CanonicalIdentifiers
+	project, _ := canonical["project"].(string)
+	tracker, _ := canonical["tracker"].(string)
+	ticketNum, _ := canonical["ticket_num"].(int)
+	if ticketNum == 0 {
+		if rawTicketNum, ok := canonical["ticket_num"].(float64); ok {
+			ticketNum = int(rawTicketNum)
+		}
+	}
+
+	labels := make([]string, 0, len(action.Labels))
+	for _, label := range action.Labels {
+		labels = append(labels, strings.TrimSpace(label))
+	}
+
+	return client.SaveTicketLabels(ctx, api.SaveTicketLabelsParams{
+		Project: project,
+		Tracker: tracker,
+		Ticket:  ticketNum,
+		Labels:  labels,
 	})
 }
 

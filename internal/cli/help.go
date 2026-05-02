@@ -157,9 +157,8 @@ Agent guidance:
 	    --fields projections may use aliases such as 'id' and 'title'.
 	  - Cursors are opaque numeric tokens. Reuse the returned value exactly as
 	    provided in 'result.pagination.next'.
-	  - Current releases remain mostly read-only. 'actions apply' now executes
-	    confirmed 'ticket_comment' actions only and still rejects other write
-	    action types.
+	  - Current releases remain mostly read-oriented. 'actions apply' now executes
+	    confirmed 'ticket_create', 'ticket_comment', and 'ticket_labels' actions.
 
 Command map:
   sf project tools
@@ -241,7 +240,7 @@ Examples:
 }
 
 func actionsUsage() string {
-	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n  apply       Run apply safety checks for an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. `actions apply`\n  layers confirmation-oriented safety checks on top of the same file validation\n  path. Today the supported action types are `ticket_create`, `ticket_labels`,\n  and `ticket_comment` for validation. Confirmed apply execution is enabled\n  for `ticket_comment` and `ticket_labels`; other write action types still\n  return structured unsupported-action results. See `sf help actions validate`\n  for the exact input shape and `sf help actions apply` for the apply safety\n  model.\n\nExamples:\n  sf actions validate actions.json\n  sf actions apply actions.json\n  sf actions apply --confirm actions.json\n"
+	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n  apply       Run apply safety checks for an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. `actions apply`\n  layers confirmation-oriented safety checks on top of the same file validation\n  path. Today the supported action types are `ticket_create`, `ticket_labels`,\n  and `ticket_comment` for validation and confirmed apply execution. See\n  `sf help actions validate` for the exact input shape and `sf help actions\n  apply` for the apply safety model.\n\nExamples:\n  sf actions validate actions.json\n  sf actions apply actions.json\n  sf actions apply --confirm actions.json\n"
 }
 
 func actionsValidateUsage() string {
@@ -249,7 +248,7 @@ func actionsValidateUsage() string {
 }
 
 func actionsApplyUsage() string {
-	return "Usage:\n  sf actions apply [--confirm] ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nOptions:\n  --confirm     Allow apply to proceed past dry-run validation checks\n\nSafety model:\n  Without `--confirm`, the command validates and previews only. This default\n  mode performs the same action-file checks as `sf actions validate` and stops\n  before any execution path.\n\n  With `--confirm`, the command may continue into write execution once specific\n  action types are enabled. Confirmation does not bypass validation. Invalid\n  actions still fail before execution begins, and bearer authentication is\n  required via `--token` or `SF_BEARER_TOKEN`.\n\nCurrent execution scope:\n  Confirmed apply currently executes `ticket_comment` and `ticket_labels`\n  actions. `ticket_create` still returns a structured unsupported-action\n  result, and mixed files containing unsupported types are rejected before any\n  write request is sent.\n\nResult shape:\n  result.ok                 overall apply-stage success\n  result.confirmed          whether `--confirm` was provided\n  result.executed           whether any write steps were executed\n  result.validated_actions  per-action validation records reused from validate\n  result.applied_actions    per-action execution records when confirmation was requested\n"
+	return "Usage:\n  sf actions apply [--confirm] ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nOptions:\n  --confirm     Allow apply to proceed past dry-run validation checks\n\nSafety model:\n  Without `--confirm`, the command validates and previews only. This default\n  mode performs the same action-file checks as `sf actions validate` and stops\n  before any execution path.\n\n  With `--confirm`, the command may continue into write execution once specific\n  action types are enabled. Confirmation does not bypass validation. Invalid\n  actions still fail before execution begins, and bearer authentication is\n  required via `--token` or `SF_BEARER_TOKEN`.\n\nCurrent execution scope:\n  Confirmed apply currently executes `ticket_create`, `ticket_comment`, and\n  `ticket_labels` actions. Mixed files containing unsupported types are still\n  rejected before any write request is sent.\n\nResult shape:\n  result.ok                 overall apply-stage success\n  result.confirmed          whether `--confirm` was provided\n  result.executed           whether any write steps were executed\n  result.validated_actions  per-action validation records reused from validate\n  result.applied_actions    per-action execution records when confirmation was requested\n"
 }
 
 func ticketsUsage() string {

@@ -85,6 +85,14 @@ type SaveTicketLabelsParams struct {
 	Labels  []string
 }
 
+type CreateTicketParams struct {
+	Project     string
+	Tracker     string
+	Summary     string
+	Description string
+	Labels      []string
+}
+
 type TicketDetailResponse struct {
 	Ticket Ticket `json:"ticket"`
 }
@@ -251,6 +259,24 @@ func (c *Client) SaveTicketLabels(ctx context.Context, params SaveTicketLabelsPa
 	form.Set("ticket_form.labels", strings.Join(params.Labels, ","))
 
 	ticketPath := fmt.Sprintf("%s/%d/save", trackerPath(params.Project, params.Tracker), params.Ticket)
+	if err := c.PostForm(ctx, ticketPath, form, nil); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Client) CreateTicket(ctx context.Context, params CreateTicketParams) error {
+	form := url.Values{}
+	form.Set("ticket_form.summary", params.Summary)
+	if params.Description != "" {
+		form.Set("ticket_form.description", params.Description)
+	}
+	if len(params.Labels) != 0 {
+		form.Set("ticket_form.labels", strings.Join(params.Labels, ","))
+	}
+
+	ticketPath := trackerPath(params.Project, params.Tracker) + "/new"
 	if err := c.PostForm(ctx, ticketPath, form, nil); err != nil {
 		return err
 	}

@@ -141,7 +141,7 @@ func runActionsApply(ctx context.Context, client *api.Client, args []string) mod
 	if applied, ok := unsupportedApplyPlan(validated.ValidatedActions); !ok {
 		result.OK = false
 		result.AppliedActions = applied
-		return errorEnvelopeMode("apply", command, prop, "unsupported_action_type", "confirmed apply currently supports `ticket_comment` and `ticket_labels` actions only", result)
+		return errorEnvelopeMode("apply", command, prop, "unsupported_action_type", "confirmed apply currently supports `ticket_create`, `ticket_comment`, and `ticket_labels` actions only", result)
 	}
 
 	result.AppliedActions = make([]appliedActionStep, 0, len(validated.ValidatedActions))
@@ -487,7 +487,7 @@ func unsupportedApplyPlan(validated []validatedAction) ([]appliedActionStep, boo
 	hasUnsupported := false
 	for _, action := range validated {
 		trimmedType := strings.TrimSpace(action.Type)
-		if trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
+		if trimmedType != actionTypeTicketCreate && trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
 			hasUnsupported = true
 			break
 		}
@@ -504,7 +504,7 @@ func unsupportedApplyPlan(validated []validatedAction) ([]appliedActionStep, boo
 			Message:  "action was not executed because the file includes unsupported confirmed apply action types",
 		}
 		trimmedType := strings.TrimSpace(action.Type)
-		if trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
+		if trimmedType != actionTypeTicketCreate && trimmedType != actionTypeTicketComment && trimmedType != actionTypeTicketLabels {
 			issue = validationIssue{
 				Severity: "error",
 				Code:     "unsupported_action_type",
@@ -529,9 +529,29 @@ func applyConfirmedAction(ctx context.Context, client *api.Client, validated val
 		return applyTicketCommentAction(ctx, client, validated, action)
 	case actionTypeTicketLabels:
 		return applyTicketLabelsAction(ctx, client, validated, action)
+	case actionTypeTicketCreate:
+		return applyTicketCreateAction(ctx, client, validated)
 	default:
 		return fmt.Errorf("unsupported confirmed action type %q", validated.Type)
 	}
+}
+
+func applyTicketCreateAction(ctx context.Context, client *api.Client, validated validatedAction) error {
+	canonical := validated.CanonicalIdentifiers
+	project, _ := canonical["project"].(string)
+	tracker, _ := canonical["tracker"].(string)
+
+	inputs := actionInputs(validated)
+	summary, _ := inputs["summary"].(string)
+	description, _ := inputs["description"].(string)
+
+	return client.CreateTicket(ctx, api.CreateTicketParams{
+		Project:     project,
+		Tracker:     tracker,
+		Summary:     summary,
+		Description: description,
+		Labels:      actionInputStrings(inputs, "labels"),
+	})
 }
 
 func applyTicketCommentAction(ctx context.Context, client *api.Client, validated validatedAction, action intentAction) error {
@@ -539,12 +559,17 @@ func applyTicketCommentAction(ctx context.Context, client *api.Client, validated
 	project, _ := canonical["project"].(string)
 	tracker, _ := canonical["tracker"].(string)
 	threadID, _ := canonical["discussion_thread_id"].(string)
+	inputs := actionInputs(validated)
+	text, _ := inputs["body"].(string)
+	if text == "" {
+		text = action.Body
+	}
 
 	return client.CreateDiscussionPost(ctx, api.CreateDiscussionPostParams{
 		Project:  project,
 		Tracker:  tracker,
 		ThreadID: threadID,
-		Text:     action.Body,
+		Text:     text,
 	})
 }
 
@@ -559,9 +584,12 @@ func applyTicketLabelsAction(ctx context.Context, client *api.Client, validated 
 		}
 	}
 
-	labels := make([]string, 0, len(action.Labels))
-	for _, label := range action.Labels {
-		labels = append(labels, strings.TrimSpace(label))
+	labels := actionInputStrings(actionInputs(validated), "labels")
+	if len(labels) == 0 {
+		labels = make([]string, 0, len(action.Labels))
+		for _, label := range action.Labels {
+			labels = append(labels, strings.TrimSpace(label))
+		}
 	}
 
 	return client.SaveTicketLabels(ctx, api.SaveTicketLabelsParams{
@@ -570,6 +598,35 @@ func applyTicketLabelsAction(ctx context.Context, client *api.Client, validated 
 		Ticket:  ticketNum,
 		Labels:  labels,
 	})
+}
+
+func actionInputs(validated validatedAction) map[string]any {
+	inputs, _ := validated.Action["inputs"].(map[string]any)
+	return inputs
+}
+
+func actionInputStrings(inputs map[string]any, key string) []string {
+	switch raw := inputs[key].(type) {
+	case []string:
+		values := make([]string, 0, len(raw))
+		for _, value := range raw {
+			if value != "" {
+				values = append(values, value)
+			}
+		}
+		return values
+	case []any:
+		values := make([]string, 0, len(raw))
+		for _, item := range raw {
+			value, _ := item.(string)
+			if value != "" {
+				values = append(values, value)
+			}
+		}
+		return values
+	default:
+		return nil
+	}
 }
 
 func applyErrorIssue(err error) validationIssue {

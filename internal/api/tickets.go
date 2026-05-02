@@ -89,7 +89,6 @@ type CreateTicketParams struct {
 	Project      string
 	Tracker      string
 	Status       string
-	AssignedTo   string
 	Private      *bool
 	Summary      string
 	Description  string
@@ -274,9 +273,6 @@ func (c *Client) CreateTicket(ctx context.Context, params CreateTicketParams) er
 	form := url.Values{}
 	if params.Status != "" {
 		form.Set("ticket_form.status", params.Status)
-	}
-	if params.AssignedTo != "" {
-		form.Set("ticket_form.assigned_to", params.AssignedTo)
 	}
 	if params.Private != nil && *params.Private {
 		form.Set("ticket_form.private", "on")

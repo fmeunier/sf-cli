@@ -30,7 +30,7 @@ func TestActionsValidateAcceptsValidTicketCreateIntent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","assigned_to":"alice","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "validate", actionsPath}, stdout)
 	if status != 0 {
@@ -58,9 +58,6 @@ func TestActionsValidateAcceptsValidTicketCreateIntent(t *testing.T) {
 	}
 	if inputs["status"] != "open" {
 		t.Fatalf("inputs.status = %v, want %q", inputs["status"], "open")
-	}
-	if inputs["assigned_to"] != "alice" {
-		t.Fatalf("inputs.assigned_to = %v, want %q", inputs["assigned_to"], "alice")
 	}
 	if inputs["private"] != true {
 		t.Fatalf("inputs.private = %v, want true", inputs["private"])
@@ -99,7 +96,7 @@ func TestActionsValidateRejectsUnsupportedTicketCreateFields(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","ticket":42,"summary":"New ticket","discussion_disabled":false}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","ticket":42,"summary":"New ticket","assigned_to":"alice","discussion_disabled":false}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "validate", actionsPath}, stdout)
 	if status != 0 {
@@ -123,7 +120,7 @@ func TestActionsValidateRejectsUnsupportedTicketCreateFields(t *testing.T) {
 		}
 		unsupportedFields[issue["field"].(string)] = true
 	}
-	for _, field := range []string{"discussion_disabled"} {
+	for _, field := range []string{"assigned_to", "discussion_disabled"} {
 		if !unsupportedFields[field] {
 			t.Fatalf("unsupported fields = %v, want %q present", unsupportedFields, field)
 		}
@@ -562,7 +559,7 @@ func TestActionsApplyDryRunPreviewsTicketCreateWithoutExecution(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","assigned_to":"alice","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "actions", "apply", actionsPath}, stdout)
 	if status != 0 {
@@ -771,8 +768,8 @@ func TestActionsApplyExecutesConfirmedTicketCreate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ReadAll() error = %v", err)
 			}
-			if got := string(body); got != "ticket_form.assigned_to=alice&ticket_form.custom_fields._priority=5&ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.private=on&ticket_form.status=open&ticket_form.summary=New+ticket" {
-				t.Fatalf("request body = %q, want %q", got, "ticket_form.assigned_to=alice&ticket_form.custom_fields._priority=5&ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.private=on&ticket_form.status=open&ticket_form.summary=New+ticket")
+			if got := string(body); got != "ticket_form.custom_fields._priority=5&ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.private=on&ticket_form.status=open&ticket_form.summary=New+ticket" {
+				t.Fatalf("request body = %q, want %q", got, "ticket_form.custom_fields._priority=5&ticket_form.description=details&ticket_form.labels=triaged%2Cneeds-review&ticket_form.private=on&ticket_form.status=open&ticket_form.summary=New+ticket")
 			}
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		default:
@@ -781,7 +778,7 @@ func TestActionsApplyExecutesConfirmedTicketCreate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","assigned_to":"alice","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
+	actionsPath := writeActionsFile(t, `{"actions":[{"type":"ticket_create","project":"test","tracker":"bugs","summary":" New ticket ","description":"details","private":true,"custom_fields":{"_priority":"5"},"labels":[" triaged ","needs-review"]}]}`)
 	stdout := &bytes.Buffer{}
 	status := Run([]string{"--base-url", server.URL + "/rest", "--token", "secret-token", "actions", "apply", "--confirm", actionsPath}, stdout)
 	if status != 0 {

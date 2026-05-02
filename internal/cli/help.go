@@ -243,15 +243,142 @@ Examples:
 }
 
 func actionsUsage() string {
-	return "Usage:\n  sf actions <subcommand> [args]\n\nSubcommands:\n  validate    Validate write intents from an actions file\n  apply       Run apply safety checks for an actions file\n\nNotes:\n  `actions validate` is a dry-run interface for automation. `actions apply`\n  layers confirmation-oriented safety checks on top of the same file validation\n  path. Today the supported action types are `ticket_create`, `ticket_labels`,\n  and `ticket_comment` for validation and confirmed apply execution. See\n  `sf help actions validate` for the exact input shape and `sf help actions\n  apply` for the apply safety model.\n\nExamples:\n  sf actions validate actions.json\n  sf actions apply actions.json\n  sf actions apply --confirm actions.json\n"
+	return strings.TrimSpace(`Usage:
+  sf actions <subcommand> [args]
+
+Subcommands:
+  validate    Validate write intents from an actions file
+  apply       Run apply safety checks for an actions file
+
+Notes:
+  'actions validate' is a dry-run interface for automation. 'actions apply'
+  layers confirmation-oriented safety checks on top of the same file validation
+  path. Today the supported action types are 'ticket_create', 'ticket_labels',
+  and 'ticket_comment' for validation and confirmed apply execution. See
+  'sf help actions validate' for the exact input shape and 'sf help actions
+  apply' for the apply safety model.
+
+Examples:
+  sf actions validate actions.json
+  sf actions apply actions.json
+  sf actions apply --confirm actions.json
+`) + "\n"
 }
 
 func actionsValidateUsage() string {
-	return "Usage:\n  sf actions validate ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nSupported action types today:\n  ticket_create   Validate a new ticket draft\n  ticket_labels   Replace the ticket label set with a validated labels array\n  ticket_comment  Validate a new top-level ticket discussion post\n\nExpected input shape:\n  {\n    \"actions\": [\n      {\n        \"type\": \"ticket_create\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"summary\": \"Add deterministic export\",\n        \"description\": \"Normalize timestamps before writing output\",\n        \"status\": \"open\",\n        \"assigned_to\": \"alice\",\n        \"private\": false,\n        \"custom_fields\": {\"_priority\": \"5\"},\n        \"labels\": [\"triaged\", \"needs-review\"]\n      },\n      {\n        \"type\": \"ticket_labels\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"labels\": [\"triaged\", \"needs-review\"]\n      },\n      {\n        \"type\": \"ticket_comment\",\n        \"project\": \"fuse-emulator\",\n        \"tracker\": \"bugs\",\n        \"ticket\": 42,\n        \"body\": \"comment text\"\n      }\n    ]\n  }\n\nCurrent ticket_create scope:\n  - validates SourceForge-compatible create inputs for required `summary`,\n    optional `description`, optional `status`, optional `assigned_to`, optional\n    `private`, optional `custom_fields`, and optional `labels`\n  - requires a non-empty `summary`\n  - defaults `status` to `open` when omitted\n  - rejects `discussion_disabled`; create-time discussion control is not modeled\n  - rejects labels containing commas because the SourceForge write API uses a\n    comma-separated `ticket_form.labels` field\n\nCurrent ticket_labels scope:\n  - validates replacement-style label updates only\n  - requires one or more non-empty labels\n  - rejects labels containing commas because the SourceForge write API uses a\n    comma-separated `ticket_form.labels` field\n\nCurrent ticket_comment scope:\n  - validates new top-level discussion posts only; reply posts are not modeled\n    yet\n  - requires a non-empty `body`\n  - requires the target ticket to exist, allow discussion, and expose a\n    discussion thread id\n\nValidation output:\n  result.ok                 overall file validity\n  result.validated_actions  per-action validation records\n\nPer-action result fields:\n  index                  original action index from the input file\n  type                   action type from the input\n  target                 requested target identifiers\n  action                 normalized supported action payload when available\n  canonical_identifiers  resolved canonical target identifiers when available\n  ok                     per-action validity\n  issues                 structured validation problems when ok is false\n"
+	return strings.TrimSpace(`Usage:
+  sf actions validate ACTIONS_FILE
+
+Arguments:
+  ACTIONS_FILE  JSON file containing an 'actions' array
+
+Supported action types today:
+  ticket_create   Validate a new ticket draft
+  ticket_labels   Replace the ticket label set with a validated labels array
+  ticket_comment  Validate a new top-level ticket discussion post
+
+Expected input shape:
+  {
+    "actions": [
+      {
+        "type": "ticket_create",
+        "project": "fuse-emulator",
+        "tracker": "bugs",
+        "summary": "Add deterministic export",
+        "description": "Normalize timestamps before writing output",
+        "status": "open",
+        "private": false,
+        "custom_fields": {"_priority": "5"},
+        "labels": ["triaged", "needs-review"]
+      },
+      {
+        "type": "ticket_labels",
+        "project": "fuse-emulator",
+        "tracker": "bugs",
+        "ticket": 42,
+        "labels": ["triaged", "needs-review"]
+      },
+      {
+        "type": "ticket_comment",
+        "project": "fuse-emulator",
+        "tracker": "bugs",
+        "ticket": 42,
+        "body": "comment text"
+      }
+    ]
+  }
+
+Current ticket_create scope:
+  - validates SourceForge-compatible create inputs for required 'summary',
+    optional 'description', optional 'status', optional 'private', optional
+    'custom_fields', and optional 'labels'
+  - requires a non-empty 'summary'
+  - defaults 'status' to 'open' when omitted
+  - rejects 'assigned_to' and 'discussion_disabled'; they are not modeled for
+    ticket_create
+  - rejects labels containing commas because the SourceForge write API uses a
+    comma-separated 'ticket_form.labels' field
+
+Current ticket_labels scope:
+  - validates replacement-style label updates only
+  - requires one or more non-empty labels
+  - rejects labels containing commas because the SourceForge write API uses a
+    comma-separated 'ticket_form.labels' field
+
+Current ticket_comment scope:
+  - validates new top-level discussion posts only; reply posts are not modeled
+    yet
+  - requires a non-empty 'body'
+  - requires the target ticket to exist, allow discussion, and expose a
+    discussion thread id
+
+Validation output:
+  result.ok                 overall file validity
+  result.validated_actions  per-action validation records
+
+Per-action result fields:
+  index                  original action index from the input file
+  type                   action type from the input
+  target                 requested target identifiers
+  action                 normalized supported action payload when available
+  canonical_identifiers  resolved canonical target identifiers when available
+  ok                     per-action validity
+  issues                 structured validation problems when ok is false
+`) + "\n"
 }
 
 func actionsApplyUsage() string {
-	return "Usage:\n  sf actions apply [--confirm] ACTIONS_FILE\n\nArguments:\n  ACTIONS_FILE  JSON file containing an `actions` array\n\nOptions:\n  --confirm     Allow apply to proceed past dry-run validation checks\n\nSafety model:\n  Without `--confirm`, the command validates and previews only. This default\n  mode performs the same action-file checks as `sf actions validate` and stops\n  before any execution path.\n\n  With `--confirm`, the command may continue into write execution once specific\n  action types are enabled. Confirmation does not bypass validation. Invalid\n  actions still fail before execution begins, and bearer authentication is\n  required via `--token` or `SF_BEARER_TOKEN`.\n\nCurrent execution scope:\n  Confirmed apply currently executes `ticket_create`, `ticket_comment`, and\n  `ticket_labels` actions. Mixed files containing unsupported types are still\n  rejected before any write request is sent.\n\nResult shape:\n  result.ok                 overall apply-stage success\n  result.confirmed          whether `--confirm` was provided\n  result.executed           whether any write steps were executed\n  result.validated_actions  per-action validation records reused from validate\n  result.applied_actions    per-action execution records when confirmation was requested\n"
+	return strings.TrimSpace(`Usage:
+  sf actions apply [--confirm] ACTIONS_FILE
+
+Arguments:
+  ACTIONS_FILE  JSON file containing an 'actions' array
+
+Options:
+  --confirm     Allow apply to proceed past dry-run validation checks
+
+Safety model:
+  Without '--confirm', the command validates and previews only. This default
+  mode performs the same action-file checks as 'sf actions validate' and stops
+  before any execution path.
+
+  With '--confirm', the command may continue into write execution once specific
+  action types are enabled. Confirmation does not bypass validation. Invalid
+  actions still fail before execution begins, and bearer authentication is
+  required via '--token' or 'SF_BEARER_TOKEN'.
+
+Current execution scope:
+  Confirmed apply currently executes 'ticket_create', 'ticket_comment', and
+  'ticket_labels' actions. Mixed files containing unsupported types are still
+  rejected before any write request is sent.
+
+Result shape:
+  result.ok                 overall apply-stage success
+  result.confirmed          whether '--confirm' was provided
+  result.executed           whether any write steps were executed
+  result.validated_actions  per-action validation records reused from validate
+  result.applied_actions    per-action execution records when confirmation was requested
+`) + "\n"
 }
 
 func ticketsUsage() string {

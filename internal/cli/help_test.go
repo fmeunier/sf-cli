@@ -53,9 +53,9 @@ func TestActionsApplyHelpIncludesSafetyGuidance(t *testing.T) {
 		"Usage:",
 		"sf actions apply [--confirm] ACTIONS_FILE",
 		"Safety model:",
-		"Without `--confirm`, the command validates and previews only.",
+		"Without '--confirm', the command validates and previews only.",
 		"Current execution scope:",
-		"Confirmed apply currently executes `ticket_create`, `ticket_comment`, and",
+		"Confirmed apply currently executes 'ticket_create', 'ticket_comment', and",
 	} {
 		if !bytes.Contains([]byte(help), []byte(want)) {
 			t.Fatalf("actions apply help missing %q", want)

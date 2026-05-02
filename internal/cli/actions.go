@@ -403,9 +403,6 @@ func normalizeTicketCreateAction(action intentAction) map[string]any {
 		"summary": strings.TrimSpace(action.Summary),
 		"status":  normalizedTicketCreateStatus(action.Status),
 	}
-	if assignedTo := strings.TrimSpace(action.AssignedTo); assignedTo != "" {
-		inputs["assigned_to"] = assignedTo
-	}
 	if action.Private != nil {
 		inputs["private"] = *action.Private
 	}
@@ -571,7 +568,6 @@ func applyTicketCreateAction(ctx context.Context, client *api.Client, validated 
 		Project:      project,
 		Tracker:      tracker,
 		Status:       actionInputString(inputs, "status"),
-		AssignedTo:   actionInputString(inputs, "assigned_to"),
 		Private:      actionInputBoolPointer(inputs, "private"),
 		Summary:      summary,
 		Description:  description,
@@ -704,6 +700,10 @@ func appendLabelsValidationIssues(validated *validatedAction, labels []string) {
 }
 
 func appendTicketCreateFieldValidationIssues(validated *validatedAction, action intentAction) {
+	if strings.TrimSpace(action.AssignedTo) != "" {
+		validated.OK = false
+		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "assigned_to", Message: "assigned_to is not supported for ticket_create"})
+	}
 	if action.DiscussionDisabled != nil {
 		validated.OK = false
 		validated.Issues = append(validated.Issues, validationIssue{Severity: "error", Code: "unsupported_ticket_create_field", Field: "discussion_disabled", Message: "discussion_disabled is not supported for ticket_create"})

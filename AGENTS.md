@@ -2,6 +2,11 @@
 
 This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
+## Entrypoint
+
+- CLI entrypoint: `cmd/sf/main.go`
+- Run locally with: `go run ./cmd/sf ...`
+
 ## Quick Reference
 
 ```bash
